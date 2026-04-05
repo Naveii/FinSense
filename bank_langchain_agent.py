@@ -83,6 +83,54 @@ PERSONAL_FINANCE_KEYWORDS = (
     "payments",
 )
 
+RETRIEVAL_HINTS = (
+    "show",
+    "find",
+    "list",
+    "which",
+    "when",
+    "where",
+    "largest",
+    "highest",
+    "biggest",
+    "total",
+    "sum",
+    "debit",
+    "credit",
+    "upi",
+    "transaction",
+    "transactions",
+    "payment",
+    "payments",
+)
+
+SPENDING_HINTS = (
+    "category",
+    "categories",
+    "group",
+    "grouping",
+    "merchant type",
+    "merchant types",
+    "merchant",
+    "breakdown",
+    "split",
+    "spending pattern",
+    "spending patterns",
+)
+
+HEALTH_HINTS = (
+    "health score",
+    "financial health",
+    "savings rate",
+    "emi",
+    "emi ratio",
+    "income ratio",
+    "discretionary",
+    "net savings",
+    "cash flow",
+    "cashflow",
+)
+
 
 def parse_amount(value: Any) -> Decimal:
     if value in (None, ""):
@@ -124,6 +172,29 @@ def merchant_hint(description: str) -> str:
     if len(parts) > 1:
         return parts[1].strip().title()
     return description[:40].title()
+
+
+def merchant_name_from_description(description: str) -> str:
+    if not description:
+        return "matched merchants"
+    normalized = description.replace("/", "-").replace("@", "-")
+    pieces = [piece.strip() for piece in normalized.split("-") if piece.strip()]
+    for piece in pieces:
+        if piece.lower() in {"upi", "imps", "neft", "card", "pos", "ach"}:
+            continue
+        if any(char.isalpha() for char in piece):
+            return piece.title()
+    return description[:40].title()
+
+
+def health_score_band(score: Decimal) -> str:
+    if score >= Decimal("80"):
+        return "strong"
+    if score >= Decimal("60"):
+        return "stable"
+    if score >= Decimal("40"):
+        return "mixed"
+    return "stretched"
 
 
 class AsyncCompatibleChatHuggingFace(ChatHuggingFace):
@@ -517,7 +588,7 @@ def build_citations(selected_tool: str, tool_output: dict[str, Any]) -> list[str
                 if match.get("metadata")
             ]
             citations.append(
-                f"Based on {len(matches)} retrieved transactions related to {merchant_hint(descriptions[0]) if descriptions else 'matched merchants'} across {format_month_range(dates)}."
+                f"Based on {len(matches)} retrieved transactions related to {merchant_name_from_description(descriptions[0]) if descriptions else 'matched merchants'} across {format_month_range(dates)}."
             )
             for match in matches[:3]:
                 metadata = match.get("metadata", {})
@@ -621,12 +692,20 @@ def build_agent_answer(question: str, selected_tool: str, tool_output: dict[str,
                 (abs(parse_amount(match.get("metadata", {}).get("amount"))) for match in candidate_pool),
                 Decimal("0"),
             )
-            return f"The total for the matching transactions is {format_currency(total)}."
+            merchant = merchant_name_from_description(
+                str(candidate_pool[0].get("metadata", {}).get("description", "")) if candidate_pool else ""
+            )
+            return f"The total across {len(candidate_pool)} matching transactions for {merchant} is {format_currency(total)}."
 
         top_match = matches[0]
         metadata = top_match.get("metadata", {})
+        amount_values = [
+            abs(parse_amount(match.get("metadata", {}).get("amount")))
+            for match in matches
+        ]
+        total = sum(amount_values, Decimal("0"))
         return (
-            f"I found {len(matches)} relevant transactions. "
+            f"I found {len(matches)} relevant transactions totaling {format_currency(total)}. "
             f"The strongest match is {metadata.get('description', 'a transaction')} on "
             f"{metadata.get('date', 'an unknown date')} for {format_currency(metadata.get('amount'))}."
         )
@@ -636,16 +715,23 @@ def build_agent_answer(question: str, selected_tool: str, tool_output: dict[str,
         if not categories:
             return "I could not group the transactions into merchant categories."
         top_category = categories[0]
+        lead_description = ""
+        if top_category.get("transactions"):
+            lead_description = str(top_category["transactions"][0].get("description", ""))
+        merchant = merchant_name_from_description(lead_description)
         return (
-            f"Your heaviest category in this result set is `{top_category.get('category', 'unknown')}`, "
-            f"with {top_category.get('transaction_count', 0)} transactions and "
-            f"{format_currency(top_category.get('spend_total', '0'))} in spend."
+            f"Your heaviest spending bucket here is {top_category.get('category', 'unknown').replace('_', ' ')}, "
+            f"with {top_category.get('transaction_count', 0)} transactions adding up to "
+            f"{format_currency(top_category.get('spend_total', '0'))}. "
+            f"The leading merchant signal in that bucket is {merchant}."
         )
 
     if selected_tool == "financial_health_score_tool":
         metrics = tool_output.get("metrics", {})
+        score = parse_amount(metrics.get("financial_health_score", "0"))
+        band = health_score_band(score)
         return (
-            f"Your financial health score is {metrics.get('financial_health_score', '0')}. "
+            f"Your financial health score is {metrics.get('financial_health_score', '0')}, which looks {band}. "
             f"Savings rate is {metrics.get('savings_rate_pct', '0')}%, "
             f"EMI-to-income ratio is {metrics.get('emi_to_income_ratio_pct', '0')}%, "
             f"and discretionary spend is {metrics.get('discretionary_spend_pct', '0')}%."
@@ -677,6 +763,16 @@ class LangChainFinanceAgent:
             | StrOutputParser()
         )
 
+    def _route_by_rules(self, question: str) -> str | None:
+        normalized = question.strip().lower()
+        if any(hint in normalized for hint in HEALTH_HINTS):
+            return "financial_health_score_tool"
+        if any(hint in normalized for hint in SPENDING_HINTS):
+            return "spending_category_analyser"
+        if any(hint in normalized for hint in RETRIEVAL_HINTS):
+            return "rag_retrieval_tool"
+        return None
+
     def invoke(self, question: str) -> dict[str, Any]:
         in_scope, guardrail_message = self.guardrail.check(question)
         if not in_scope:
@@ -690,8 +786,10 @@ class LangChainFinanceAgent:
                 "contexts": [],
             }
 
-        routed_tool = self.router_chain.invoke({"question": question}).strip().splitlines()[0].strip()
-        routed_tool = routed_tool.lower().replace("`", "").replace('"', "").replace("'", "")
+        routed_tool = self._route_by_rules(question)
+        if routed_tool is None:
+            routed_tool = self.router_chain.invoke({"question": question}).strip().splitlines()[0].strip()
+            routed_tool = routed_tool.lower().replace("`", "").replace('"', "").replace("'", "")
         if routed_tool not in self.tools:
             routed_tool = "rag_retrieval_tool"
 

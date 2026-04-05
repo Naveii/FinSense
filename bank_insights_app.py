@@ -34,6 +34,13 @@ st.set_page_config(
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_STATEMENT_PATH = PROJECT_ROOT / "sample_data" / "sample_bank_statement.csv"
+LIVE_APP_URL = "https://bankinsightsapppy-hewucidkqvbxdmstv84vyu.streamlit.app/"
+EXAMPLE_PROMPTS = [
+    "Show all large UPI debits",
+    "Group my spending by merchant type",
+    "What is my financial health score?",
+    "Find my biggest loan or EMI payments",
+]
 
 
 def format_currency(value: Any) -> str:
@@ -132,6 +139,35 @@ def build_citations(selected_tool: str, tool_output: dict[str, Any]) -> list[str
     return citations
 
 
+def prettify_metric_name(name: str) -> str:
+    return name.replace("_", " ").title()
+
+
+def format_metric_value(name: str, value: Any) -> str:
+    metric_name = name.lower()
+    if any(token in metric_name for token in ("income", "expenses", "savings")):
+        return format_currency(value)
+    if "pct" in metric_name or "ratio" in metric_name:
+        return f"{value}%"
+    return str(value)
+
+
+def format_support_table(table: pd.DataFrame) -> pd.DataFrame:
+    if table.empty:
+        return table
+
+    formatted = table.copy()
+    if "Amount" in formatted.columns:
+        formatted["Amount"] = formatted["Amount"].apply(format_currency)
+    if "Spend Total" in formatted.columns:
+        formatted["Spend Total"] = formatted["Spend Total"].apply(format_currency)
+    if "Distance" in formatted.columns:
+        formatted["Distance"] = formatted["Distance"].apply(
+            lambda value: f"{float(value):.3f}" if value not in (None, "") else ""
+        )
+    return formatted
+
+
 def generate_chat_answer(selected_tool: str, tool_output: dict[str, Any]) -> str:
     if selected_tool == "rag_retrieval_tool":
         matches = tool_output.get("matches", [])
@@ -199,7 +235,7 @@ def tool_output_to_dataframe(tool_output: dict[str, Any]) -> pd.DataFrame:
     if "metrics" in tool_output:
         return pd.DataFrame(
             [
-                {"Metric": key, "Value": value}
+                {"Metric": prettify_metric_name(key), "Value": format_metric_value(key, value)}
                 for key, value in tool_output.get("metrics", {}).items()
             ]
         )
@@ -318,35 +354,7 @@ def render_health_dashboard(financial_tools: FinancialTools) -> None:
     st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
 
-def render_chat_panel(agent: LangChainFinanceAgent) -> None:
-    st.subheader("Chat")
-    st.caption("Ask about spending patterns, merchant categories, or financial health.")
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {
-                "role": "assistant",
-                "content": "Ask a question like 'show all large UPI debits' or 'what is my financial health score'.",
-                "citations": [],
-                "table": pd.DataFrame(),
-            }
-        ]
-
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            if message.get("citations"):
-                st.markdown("**Citations**")
-                for citation in message["citations"]:
-                    st.caption(citation)
-            table = message.get("table")
-            if isinstance(table, pd.DataFrame) and not table.empty:
-                st.dataframe(table, use_container_width=True, hide_index=True)
-
-    prompt = st.chat_input("Ask about your transactions")
-    if not prompt:
-        return
-
+def run_prompt(agent: LangChainFinanceAgent, prompt: str) -> None:
     st.session_state.messages.append(
         {"role": "user", "content": prompt, "citations": [], "table": pd.DataFrame()}
     )
@@ -370,7 +378,7 @@ def render_chat_panel(agent: LangChainFinanceAgent) -> None:
                 st.markdown("**Citations**")
                 for citation in citations:
                     st.caption(citation)
-            table = tool_output_to_dataframe(response["tool_output"])
+            table = format_support_table(tool_output_to_dataframe(response["tool_output"]))
             if not table.empty:
                 st.dataframe(table, use_container_width=True, hide_index=True)
 
@@ -382,6 +390,50 @@ def render_chat_panel(agent: LangChainFinanceAgent) -> None:
             "table": table,
         }
     )
+
+
+def render_chat_panel(agent: LangChainFinanceAgent) -> None:
+    st.subheader("Chat")
+    st.caption("Ask about spending patterns, merchant categories, or financial health.")
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {
+                "role": "assistant",
+                "content": "Ask a question like 'show all large UPI debits' or 'what is my financial health score'.",
+                "citations": [],
+                "table": pd.DataFrame(),
+            }
+        ]
+    if "queued_prompt" not in st.session_state:
+        st.session_state.queued_prompt = None
+
+    prompt_columns = st.columns(len(EXAMPLE_PROMPTS))
+    for index, example_prompt in enumerate(EXAMPLE_PROMPTS):
+        with prompt_columns[index]:
+            if st.button(example_prompt, key=f"example_prompt_{index}", use_container_width=True):
+                st.session_state.queued_prompt = example_prompt
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            if message.get("citations"):
+                st.markdown("**Citations**")
+                for citation in message["citations"]:
+                    st.caption(citation)
+            table = message.get("table")
+            if isinstance(table, pd.DataFrame) and not table.empty:
+                st.dataframe(format_support_table(table), use_container_width=True, hide_index=True)
+
+    prompt = st.chat_input("Ask about your transactions")
+    if not prompt and st.session_state.queued_prompt:
+        prompt = st.session_state.queued_prompt
+        st.session_state.queued_prompt = None
+
+    if not prompt:
+        return
+
+    run_prompt(agent, prompt)
 
 
 def main() -> None:
@@ -403,12 +455,17 @@ def main() -> None:
             border-radius: 16px;
             padding: 0.5rem 0.8rem;
         }
+        div[data-testid="stButton"] > button {
+            border-radius: 999px;
+            border: 1px solid rgba(31, 41, 55, 0.08);
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
     st.title("Bank Statement Insights")
     st.caption("Upload a CSV, review your financial health, and chat with citation-backed transaction answers.")
+    st.markdown(f"[Open live app]({LIVE_APP_URL})")
 
     left_col, right_col = st.columns([0.92, 1.08], gap="large")
     agent, financial_tools = get_finance_agent()
