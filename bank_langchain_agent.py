@@ -178,9 +178,10 @@ class TransactionStore:
     ) -> None:
         self.persist_directory = persist_directory
         self.collection_name = collection_name
+        self.persist_directory.mkdir(parents=True, exist_ok=True)
         self.embedding_model = SentenceTransformer(embedding_model_name)
         self.chroma_client = chromadb.PersistentClient(path=str(persist_directory))
-        self.collection = self.chroma_client.get_collection(name=collection_name)
+        self.collection = self.chroma_client.get_or_create_collection(name=collection_name)
 
     def semantic_search(self, query: str, top_k: int) -> dict[str, Any]:
         query_embedding = self.embedding_model.encode(

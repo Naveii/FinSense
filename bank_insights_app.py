@@ -32,6 +32,9 @@ st.set_page_config(
     layout="wide",
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+SAMPLE_STATEMENT_PATH = PROJECT_ROOT / "sample_data" / "sample_bank_statement.csv"
+
 
 def format_currency(value: Any) -> str:
     try:
@@ -204,8 +207,43 @@ def tool_output_to_dataframe(tool_output: dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def ensure_default_data_loaded() -> None:
+    if not SAMPLE_STATEMENT_PATH.exists():
+        return
+
+    try:
+        store = TransactionStore(
+            persist_directory=DEFAULT_CHROMA_DIR,
+            collection_name=DEFAULT_COLLECTION,
+            embedding_model_name=DEFAULT_EMBEDDING_MODEL,
+        )
+        if store.collection.count() > 0:
+            return
+    except Exception:
+        pass
+
+    transactions = parse_transactions(
+        csv_path=SAMPLE_STATEMENT_PATH,
+        date_column=None,
+        description_column=None,
+        debit_column=None,
+        credit_column=None,
+        amount_column=None,
+        balance_column=None,
+        reference_column=None,
+    )
+    upsert_transactions(
+        transactions=transactions,
+        persist_directory=DEFAULT_CHROMA_DIR,
+        collection_name=DEFAULT_COLLECTION,
+        embedding_model=DEFAULT_EMBEDDING_MODEL,
+        batch_size=100,
+    )
+
+
 @st.cache_resource(show_spinner=False)
 def get_finance_agent() -> tuple[LangChainFinanceAgent, FinancialTools]:
+    ensure_default_data_loaded()
     llm = build_local_chat_model(DEFAULT_AGENT_MODEL)
     store = TransactionStore(
         persist_directory=DEFAULT_CHROMA_DIR,
