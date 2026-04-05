@@ -1,0 +1,6 @@
+{
+  "num_questions": 10,
+  "average_faithfulness": 1.0,
+  "average_context_relevance": 0.0,
+  "results_csv": "D:\\Documents\\bank-statement-insights\\eval\\ragas_eval_results\\finance_agent_ragas_eval.csv"
+}

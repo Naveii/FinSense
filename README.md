@@ -106,6 +106,24 @@ pip install -r requirements-eval.txt
 D:\Documents\.venv\Scripts\streamlit.exe run D:\Documents\bank-statement-insights\bank_insights_app.py
 ```
 
+### Demo with the sanitized sample dataset
+
+If you want a safe public demo flow, use the fictional sample statement at:
+
+- `sample_data/sample_bank_statement.csv`
+- `sample_data/sample_ragas_eval.csv`
+- `sample_data/sample_ragas_summary.json`
+
+You can ingest it from the CLI:
+
+```powershell
+D:\Documents\.venv\Scripts\python.exe D:\Documents\bank-statement-insights\bank_statement_to_chroma.py D:\Documents\bank-statement-insights\sample_data\sample_bank_statement.csv
+```
+
+Or upload that same file through the Streamlit UI.
+
+Sample-safe RAGAS outputs generated from the fictional dataset are also included for demos, screenshots, and repository review.
+
 ### 2. Ingest a CSV from the CLI
 
 ```powershell
@@ -184,6 +202,11 @@ The evaluation harness uses a fixed set of 10 questions and writes outputs to:
 - `eval/ragas_eval_results/finance_agent_ragas_eval.csv`
 - `eval/ragas_eval_results/finance_agent_ragas_summary.json`
 
+Committed demo-safe examples generated from the fictional sample dataset live at:
+
+- `sample_data/sample_ragas_eval.csv`
+- `sample_data/sample_ragas_summary.json`
+
 Current caveat:
 
 - The installed RAGAS version works, but local Hugging Face model compatibility is a bit rough and may still require follow-up tuning around async execution and metric behavior.
@@ -209,3 +232,4 @@ Current caveat:
 - The ChromaDB store is local and persistent under `data/chroma_bank_transactions`.
 - The first run can be slow because local Hugging Face models are loaded into memory.
 - The app and CLI are designed for personal finance analysis only, not general-purpose chat.
+- `sample_data/sample_bank_statement.csv` is fictional and safe to use for demos, screenshots, and public walkthroughs.
