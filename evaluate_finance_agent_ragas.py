@@ -25,7 +25,7 @@ from bank_langchain_agent import (
 TEST_CASES = [
     {
         "question": "What was the largest UPI debit in the statement?",
-        "reference": "The largest UPI debit in the statement was INR 49,500.00 to K S VENU on 2026-04-01.",
+        "reference": "The largest UPI debit in the statement was a payment to Merchant Alpha on 2026-04-01.",
     },
     {
         "question": "How many debit transactions are in the statement?",
@@ -37,31 +37,31 @@ TEST_CASES = [
     },
     {
         "question": "What was the highest credit transaction?",
-        "reference": "The highest credit transaction was INR 16,000.00 from SURYANSH SINGH on 2026-04-01.",
+        "reference": "The highest credit transaction was a transfer from Contact Alpha on 2026-04-01.",
     },
     {
         "question": "What is the total credited amount in the statement period?",
-        "reference": "The total credited amount in the statement period was INR 21,193.53.",
+        "reference": "The total credited amount in the statement period was a little above INR 20,000.",
     },
     {
-        "question": "How much did I pay to CRED CLUB?",
-        "reference": "You paid CRED CLUB INR 44,266.62 on 2026-04-05.",
+        "question": "How much did I pay to Merchant Beta?",
+        "reference": "You made a large payment to Merchant Beta on 2026-04-05.",
     },
     {
-        "question": "How much did I transfer to NAVNEET KUMAR?",
-        "reference": "You transferred INR 7,000.00 to NAVNEET KUMAR on 2026-04-05.",
+        "question": "How much did I transfer to Contact Beta?",
+        "reference": "You transferred money to Contact Beta on 2026-04-05.",
     },
     {
         "question": "What is my financial health score?",
-        "reference": "Your financial health score is 0.00 based on income of INR 21,193.53 and expenses of INR 105,227.39.",
+        "reference": "Your financial health score is low because expenses are much higher than income in this sample period.",
     },
     {
         "question": "What was my net savings in this statement period?",
-        "reference": "Your net savings in this statement period were -INR 84,033.86.",
+        "reference": "Your net savings in this statement period were negative.",
     },
     {
         "question": "What were my total expenses in this statement period?",
-        "reference": "Your total expenses in this statement period were INR 105,227.39.",
+        "reference": "Your total expenses in this statement period were above INR 100,000.",
     },
 ]
 
