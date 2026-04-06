@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from ragas import EvaluationDataset, evaluate
@@ -67,20 +68,26 @@ TEST_CASES = [
 
 
 def build_agent() -> LangChainFinanceAgent:
-    llm = build_local_chat_model(DEFAULT_AGENT_MODEL)
+    llm_cache: dict[str, Any] = {}
+
+    def llm_loader():
+        if "model" not in llm_cache:
+            llm_cache["model"] = build_local_chat_model(DEFAULT_AGENT_MODEL)
+        return llm_cache["model"]
+
     store = TransactionStore(
         persist_directory=DEFAULT_CHROMA_DIR,
         collection_name=DEFAULT_COLLECTION,
         embedding_model_name=DEFAULT_EMBEDDING_MODEL,
     )
-    financial_tools = FinancialTools(store=store, classifier=MerchantClassifier(llm))
+    financial_tools = FinancialTools(store=store, classifier=MerchantClassifier(llm_loader))
     return LangChainFinanceAgent(
         tools=[
             financial_tools.retrieval_tool(),
             financial_tools.spending_category_tool(),
             financial_tools.financial_health_tool(),
         ],
-        llm=llm,
+        llm_loader=llm_loader,
     )
 
 

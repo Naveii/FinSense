@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 os.environ.setdefault('PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION', 'python')
 
@@ -460,9 +460,6 @@ def build_local_chat_model(model_id: str) -> ChatHuggingFace:
 
 
 class FinanceScopeGuardrail:
-    def __init__(self, llm: ChatHuggingFace) -> None:
-        self._llm = llm
-
     def check(self, question: str) -> tuple[bool, str]:
         normalized = question.strip().lower()
         if any(keyword in normalized for keyword in PERSONAL_FINANCE_KEYWORDS):
@@ -483,13 +480,20 @@ class TransactionStore:
     ) -> None:
         self.persist_directory = persist_directory
         self.collection_name = collection_name
+        self.embedding_model_name = embedding_model_name
         self.persist_directory.mkdir(parents=True, exist_ok=True)
-        self.embedding_model = SentenceTransformer(embedding_model_name)
+        self._embedding_model: SentenceTransformer | None = None
+        self._all_transactions_cache: list[dict[str, Any]] | None = None
         self.chroma_client = chromadb.PersistentClient(path=str(persist_directory))
         self.collection = self.chroma_client.get_or_create_collection(name=collection_name)
 
+    def _get_embedding_model(self) -> SentenceTransformer:
+        if self._embedding_model is None:
+            self._embedding_model = SentenceTransformer(self.embedding_model_name)
+        return self._embedding_model
+
     def semantic_search(self, query: str, top_k: int) -> dict[str, Any]:
-        query_embedding = self.embedding_model.encode(
+        query_embedding = self._get_embedding_model().encode(
             [query], show_progress_bar=False
         )[0].tolist()
         results = self.collection.query(
@@ -518,6 +522,9 @@ class TransactionStore:
         return {"query": query, "top_k": top_k, "matches": matches}
 
     def all_transactions(self) -> list[dict[str, Any]]:
+        if self._all_transactions_cache is not None:
+            return self._all_transactions_cache
+
         total = self.collection.count()
         results = self.collection.get(
             limit=total,
@@ -537,7 +544,8 @@ class TransactionStore:
                     "metadata": metadata,
                 }
             )
-        return self._clean_records(transactions)
+        self._all_transactions_cache = self._clean_records(transactions)
+        return self._all_transactions_cache
 
     def _clean_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         cleaned = []
@@ -564,8 +572,18 @@ class TransactionStore:
 
 
 class MerchantClassifier:
-    def __init__(self, llm: ChatHuggingFace) -> None:
-        self.chain = (
+    def __init__(self, llm_loader: Callable[[], ChatHuggingFace] | None = None) -> None:
+        self._llm_loader = llm_loader
+        self._chain: Any | None = None
+        self.cache: dict[str, str] = {}
+
+    def _get_chain(self) -> Any | None:
+        if self._chain is not None:
+            return self._chain
+        if self._llm_loader is None:
+            return None
+
+        self._chain = (
             ChatPromptTemplate.from_messages(
                 [
                     (
@@ -584,26 +602,30 @@ class MerchantClassifier:
                     ),
                 ]
             )
-            | llm
+            | self._llm_loader()
             | StrOutputParser()
         )
-        self.cache: dict[str, str] = {}
+        return self._chain
 
     def classify(self, description: str, amount: str, transaction_type: str) -> str:
         cache_key = f"{description}|{amount}|{transaction_type}"
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        raw_output = self.chain.invoke(
-            {
-                "description": description or "unknown",
-                "amount": amount or "0",
-                "transaction_type": transaction_type or "unknown",
-            }
-        )
-        normalized = raw_output.strip().splitlines()[0].strip().lower().replace(" ", "_")
-        if normalized not in CATEGORY_OPTIONS:
-            normalized = self._fallback(description, amount, transaction_type)
+        normalized = self._fallback(description, amount, transaction_type)
+        if normalized == "other":
+            chain = self._get_chain()
+            if chain is not None:
+                raw_output = chain.invoke(
+                    {
+                        "description": description or "unknown",
+                        "amount": amount or "0",
+                        "transaction_type": transaction_type or "unknown",
+                    }
+                )
+                candidate = raw_output.strip().splitlines()[0].strip().lower().replace(" ", "_")
+                if candidate in CATEGORY_OPTIONS:
+                    normalized = candidate
 
         self.cache[cache_key] = normalized
         return normalized
@@ -1049,10 +1071,23 @@ def build_agent_answer(question: str, selected_tool: str, tool_output: dict[str,
 
 
 class LangChainFinanceAgent:
-    def __init__(self, tools: list[BaseTool], llm: ChatHuggingFace) -> None:
+    def __init__(
+        self,
+        tools: list[BaseTool],
+        llm_loader: Callable[[], ChatHuggingFace] | None = None,
+    ) -> None:
         self.tools = {tool.name: tool for tool in tools}
-        self.guardrail = FinanceScopeGuardrail(llm)
-        self.router_chain = (
+        self.guardrail = FinanceScopeGuardrail()
+        self._llm_loader = llm_loader
+        self._router_chain: Any | None = None
+
+    def _get_router_chain(self) -> Any | None:
+        if self._router_chain is not None:
+            return self._router_chain
+        if self._llm_loader is None:
+            return None
+
+        self._router_chain = (
             ChatPromptTemplate.from_messages(
                 [
                     (
@@ -1067,9 +1102,10 @@ class LangChainFinanceAgent:
                     ("human", "{question}"),
                 ]
             )
-            | llm
+            | self._llm_loader()
             | StrOutputParser()
         )
+        return self._router_chain
 
     def _route_by_rules(self, question: str) -> str | None:
         normalized = question.strip().lower()
@@ -1096,8 +1132,10 @@ class LangChainFinanceAgent:
 
         routed_tool = self._route_by_rules(question)
         if routed_tool is None:
-            routed_tool = self.router_chain.invoke({"question": question}).strip().splitlines()[0].strip()
-            routed_tool = routed_tool.lower().replace("`", "").replace('"', "").replace("'", "")
+            router_chain = self._get_router_chain()
+            if router_chain is not None:
+                routed_tool = router_chain.invoke({"question": question}).strip().splitlines()[0].strip()
+                routed_tool = routed_tool.lower().replace("`", "").replace('"', "").replace("'", "")
         if routed_tool not in self.tools:
             routed_tool = "rag_retrieval_tool"
 
@@ -1150,19 +1188,25 @@ def main() -> None:
     parser = build_argument_parser()
     args = parser.parse_args()
 
-    llm = build_local_chat_model(args.agent_model)
+    llm_cache: dict[str, Any] = {}
+
+    def llm_loader() -> ChatHuggingFace:
+        if "model" not in llm_cache:
+            llm_cache["model"] = build_local_chat_model(args.agent_model)
+        return llm_cache["model"]
+
     store = TransactionStore(
         persist_directory=args.persist_directory,
         collection_name=args.collection_name,
         embedding_model_name=args.embedding_model,
     )
-    financial_tools = FinancialTools(store=store, classifier=MerchantClassifier(llm))
+    financial_tools = FinancialTools(store=store, classifier=MerchantClassifier(llm_loader))
     tools = [
         financial_tools.retrieval_tool(),
         financial_tools.spending_category_tool(),
         financial_tools.financial_health_tool(),
     ]
-    agent = LangChainFinanceAgent(tools=tools, llm=llm)
+    agent = LangChainFinanceAgent(tools=tools, llm_loader=llm_loader)
     response = agent.invoke(args.question)
     print(json.dumps(response, indent=2))
 

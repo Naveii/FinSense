@@ -61,6 +61,9 @@ flowchart LR
   - amount thresholds like `above 5000`
   - month windows like `between Jan and Mar`
   - merchant-focused totals like `total spent on Swiggy`
+- Lazy model loading so the dashboard renders before the local chat model is initialized
+- Faster dashboard computation via cached health summaries and heuristic-first categorization
+- Prebuilt sample Chroma snapshot for lighter cloud cold starts
 - Fixed 10-question RAGAS benchmark harness
 
 ## Project Structure
@@ -81,6 +84,7 @@ bank-statement-insights/
 |   `-- config.toml
 |-- sample_data/
 |   |-- sample_bank_statement.csv
+|   |-- chroma_bank_transactions_snapshot/
 |   |-- sample_ragas_eval.csv
 |   `-- sample_ragas_summary.json
 |-- docs/
@@ -164,11 +168,13 @@ Example app questions:
 The repo includes fictional demo-safe files:
 
 - `sample_data/sample_bank_statement.csv`
+- `sample_data/chroma_bank_transactions_snapshot/`
 - `sample_data/sample_ragas_eval.csv`
 - `sample_data/sample_ragas_summary.json`
 
-The deployed app auto-seeds the sample CSV on first startup so it works even when the cloud filesystem starts empty.
-The shared demo collection is reset back to the sample dataset on session startup so previously uploaded private data does not linger in the public app.
+The deployed app prefers the prebuilt sample Chroma snapshot on startup, which avoids regenerating embeddings during many cold starts.
+If the snapshot is missing, the app can still rebuild the sample collection from the fictional CSV.
+Uploaded statements are kept in isolated per-session temporary storage so private uploads do not leak into the shared public demo dataset.
 
 ## Deployment
 
@@ -182,11 +188,12 @@ Deployment notes:
 
 Important notes:
 
-- First load can be slow because local Hugging Face models need to initialize.
-- The cloud app seeds ChromaDB from the sample CSV if the collection is missing.
+- First chat request can still be slower than the initial page render because the local Hugging Face model is loaded lazily.
+- The app now avoids loading the chat model on first paint and uses a prebuilt sample Chroma snapshot when available.
+- The cloud app can still seed ChromaDB from the sample CSV if the sample collection is missing.
 - `requirements.txt` pins `protobuf==3.20.3` to stay compatible with ChromaDB on Streamlit Cloud.
 - Uploaded statements are now indexed in isolated per-session temporary storage instead of the shared demo Chroma collection.
-- The shared demo collection is reset to the fictional sample data on startup.
+- The health dashboard uses cached summaries and heuristic-first categorization to reduce rerun latency.
 
 ## Guardrail Behavior
 
@@ -235,6 +242,13 @@ The finance copilot is also more deliberate than a plain semantic-search demo:
 - it uses rule-based routing before falling back to the small local LLM router
 - it applies finance-aware filters for amount, month range, merchant phrases, and debit/credit type
 - it surfaces applied filters in citations so the answer is easier to trust
+
+Recent performance fixes:
+
+- the transaction embedding model now loads only when semantic retrieval actually runs
+- the local chat model now loads only when a query needs LLM routing or ambiguous classification
+- dashboard health summaries are cached separately from chat state
+- merchant classification now uses heuristics first and only falls back to the LLM for unclear cases
 
 ## What I Learned
 

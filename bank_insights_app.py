@@ -20,8 +20,8 @@ from bank_langchain_agent import (
     DEFAULT_COLLECTION,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_CHROMA_DIR,
-    FinancialTools,
     LangChainFinanceAgent,
+    FinancialTools,
     MerchantClassifier,
     TransactionStore,
     build_local_chat_model,
@@ -37,8 +37,8 @@ st.set_page_config(
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_STATEMENT_PATH = PROJECT_ROOT / "sample_data" / "sample_bank_statement.csv"
+SAMPLE_CHROMA_SNAPSHOT_DIR = PROJECT_ROOT / "sample_data" / "chroma_bank_transactions_snapshot"
 LIVE_APP_URL = "https://bankinsightsapppy-hewucidkqvbxdmstv84vyu.streamlit.app/"
-DEMO_DATA_VERSION = "sample-v1"
 EXAMPLE_PROMPTS = [
     "Show all large UPI debits",
     "Group my spending by merchant type",
@@ -259,24 +259,32 @@ def tool_output_to_dataframe(tool_output: dict[str, Any]) -> pd.DataFrame:
 def ensure_default_data_loaded() -> None:
     if not SAMPLE_STATEMENT_PATH.exists():
         return
-    version_marker = DEFAULT_CHROMA_DIR / ".demo_data_version"
-    if version_marker.exists() and version_marker.read_text(encoding="utf-8").strip() == DEMO_DATA_VERSION:
-        try:
-            store = TransactionStore(
-                persist_directory=DEFAULT_CHROMA_DIR,
-                collection_name=DEFAULT_COLLECTION,
-                embedding_model_name=DEFAULT_EMBEDDING_MODEL,
-            )
-            if store.collection.count() > 0:
-                return
-        except Exception:
-            pass
+    try:
+        default_client = chromadb.PersistentClient(path=str(DEFAULT_CHROMA_DIR))
+        default_collection = default_client.get_collection(DEFAULT_COLLECTION)
+        if default_collection.count() > 0:
+            return
+    except Exception:
+        pass
+
     load_sample_dataset(replace_existing=True)
-    DEFAULT_CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-    version_marker.write_text(DEMO_DATA_VERSION, encoding="utf-8")
 
 
 def load_sample_dataset(replace_existing: bool = False) -> str:
+    if SAMPLE_CHROMA_SNAPSHOT_DIR.exists():
+        if replace_existing:
+            shutil.rmtree(DEFAULT_CHROMA_DIR, ignore_errors=True)
+        shutil.copytree(SAMPLE_CHROMA_SNAPSHOT_DIR, DEFAULT_CHROMA_DIR, dirs_exist_ok=True)
+        get_finance_agent.clear()
+        get_health_dashboard_data.clear()
+        try:
+            snapshot_client = chromadb.PersistentClient(path=str(DEFAULT_CHROMA_DIR))
+            snapshot_collection = snapshot_client.get_collection(DEFAULT_COLLECTION)
+            transaction_count = snapshot_collection.count()
+        except Exception:
+            transaction_count = 0
+        return f"Loaded {transaction_count} sample transactions."
+
     if replace_existing:
         reset_client = chromadb.PersistentClient(path=str(DEFAULT_CHROMA_DIR))
         try:
@@ -302,6 +310,7 @@ def load_sample_dataset(replace_existing: bool = False) -> str:
         batch_size=100,
     )
     get_finance_agent.clear()
+    get_health_dashboard_data.clear()
     return f"Loaded {len(transactions)} sample transactions."
 
 
@@ -319,6 +328,7 @@ def reset_session_storage() -> None:
     st.session_state.session_collection_name = None
     st.session_state.using_session_data = False
     get_finance_agent.clear()
+    get_health_dashboard_data.clear()
 
 
 def get_active_storage() -> tuple[Path, str]:
@@ -343,22 +353,43 @@ def get_finance_agent(
     persist_directory: str,
     collection_name: str,
 ) -> tuple[LangChainFinanceAgent, FinancialTools]:
-    llm = build_local_chat_model(DEFAULT_AGENT_MODEL)
+    llm_cache: dict[str, Any] = {}
+
+    def llm_loader():
+        if "model" not in llm_cache:
+            llm_cache["model"] = build_local_chat_model(DEFAULT_AGENT_MODEL)
+        return llm_cache["model"]
+
     store = TransactionStore(
         persist_directory=Path(persist_directory),
         collection_name=collection_name,
         embedding_model_name=DEFAULT_EMBEDDING_MODEL,
     )
-    financial_tools = FinancialTools(store=store, classifier=MerchantClassifier(llm))
+    financial_tools = FinancialTools(store=store, classifier=MerchantClassifier(llm_loader))
     agent = LangChainFinanceAgent(
         tools=[
             financial_tools.retrieval_tool(),
             financial_tools.spending_category_tool(),
             financial_tools.financial_health_tool(),
         ],
-        llm=llm,
+        llm_loader=llm_loader,
     )
     return agent, financial_tools
+
+
+@st.cache_data(show_spinner=False)
+def get_health_dashboard_data(
+    persist_directory: str,
+    collection_name: str,
+) -> dict[str, Any]:
+    store = TransactionStore(
+        persist_directory=Path(persist_directory),
+        collection_name=collection_name,
+        embedding_model_name=DEFAULT_EMBEDDING_MODEL,
+    )
+    dashboard_tools = FinancialTools(store=store, classifier=MerchantClassifier())
+    health_json = dashboard_tools.financial_health_tool().invoke({"query": "dashboard"})
+    return json.loads(health_json)
 
 
 def ingest_uploaded_csv(uploaded_file) -> str:
@@ -385,6 +416,7 @@ def ingest_uploaded_csv(uploaded_file) -> str:
         batch_size=100,
     )
     get_finance_agent.clear()
+    get_health_dashboard_data.clear()
     return (
         f"Loaded {len(transactions)} transactions from {uploaded_file.name} into "
         "temporary session storage."
@@ -409,9 +441,8 @@ def metric_card_html(
     )
 
 
-def render_health_dashboard(financial_tools: FinancialTools) -> None:
-    health_json = financial_tools.financial_health_tool().invoke({"query": "dashboard"})
-    health_data = json.loads(health_json)
+def render_health_dashboard(persist_directory: str, collection_name: str) -> None:
+    health_data = get_health_dashboard_data(persist_directory, collection_name)
     metrics = health_data.get("metrics", {})
     score = metrics.get("financial_health_score", "0")
 
@@ -745,7 +776,7 @@ def main() -> None:
 
     left_col, right_col = st.columns([1.08, 0.92], gap="large")
     active_directory, active_collection = get_active_storage()
-    agent, financial_tools = get_finance_agent(str(active_directory), active_collection)
+    agent, _ = get_finance_agent(str(active_directory), active_collection)
 
     with left_col:
         st.markdown("### Workspace")
@@ -762,7 +793,7 @@ def main() -> None:
                     reset_session_storage()
                     st.session_state.status_message = load_sample_dataset()
                 active_directory, active_collection = get_active_storage()
-                agent, financial_tools = get_finance_agent(str(active_directory), active_collection)
+                agent, _ = get_finance_agent(str(active_directory), active_collection)
         with reset_col:
             if st.button("Reset Chat", use_container_width=True):
                 st.session_state.messages = [
@@ -785,11 +816,11 @@ def main() -> None:
             with st.spinner("Parsing statement, generating embeddings, and creating a temporary session index..."):
                 st.session_state.status_message = ingest_uploaded_csv(uploaded_file)
             active_directory, active_collection = get_active_storage()
-            agent, financial_tools = get_finance_agent(str(active_directory), active_collection)
+            agent, _ = get_finance_agent(str(active_directory), active_collection)
 
         if st.session_state.status_message:
             st.success(st.session_state.status_message)
-        render_health_dashboard(financial_tools)
+        render_health_dashboard(str(active_directory), active_collection)
 
     with right_col:
         render_chat_panel(agent)
