@@ -133,16 +133,6 @@ Copy-Item .env.example .env
 cp .env.example .env
 ```
 
-Enable uploads only for private/local use:
-
-```powershell
-$env:ENABLE_STATEMENT_UPLOADS="true"
-```
-
-```bash
-export ENABLE_STATEMENT_UPLOADS=true
-```
-
 ## Run Locally
 
 Start the Streamlit app:
@@ -178,7 +168,7 @@ The repo includes fictional demo-safe files:
 - `sample_data/sample_ragas_summary.json`
 
 The deployed app auto-seeds the sample CSV on first startup so it works even when the cloud filesystem starts empty.
-When uploads are disabled, startup also resets the shared Chroma collection back to the sample dataset so previously uploaded private data does not linger in the public demo.
+The shared demo collection is reset back to the sample dataset on session startup so previously uploaded private data does not linger in the public app.
 
 ## Deployment
 
@@ -195,8 +185,8 @@ Important notes:
 - First load can be slow because local Hugging Face models need to initialize.
 - The cloud app seeds ChromaDB from the sample CSV if the collection is missing.
 - `requirements.txt` pins `protobuf==3.20.3` to stay compatible with ChromaDB on Streamlit Cloud.
-- Public/demo deployments should keep `ENABLE_STATEMENT_UPLOADS=false`.
-- When uploads are disabled, the app resets the collection to the fictional sample data on startup.
+- Uploaded statements are now indexed in isolated per-session temporary storage instead of the shared demo Chroma collection.
+- The shared demo collection is reset to the fictional sample data on startup.
 
 ## Guardrail Behavior
 

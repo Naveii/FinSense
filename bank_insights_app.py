@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, mkdtemp
 from typing import Any
+from uuid import uuid4
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
@@ -36,7 +38,6 @@ st.set_page_config(
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_STATEMENT_PATH = PROJECT_ROOT / "sample_data" / "sample_bank_statement.csv"
 LIVE_APP_URL = "https://bankinsightsapppy-hewucidkqvbxdmstv84vyu.streamlit.app/"
-UPLOADS_ENABLED = os.getenv("ENABLE_STATEMENT_UPLOADS", "false").strip().lower() == "true"
 EXAMPLE_PROMPTS = [
     "Show all large UPI debits",
     "Group my spending by merchant type",
@@ -257,39 +258,11 @@ def tool_output_to_dataframe(tool_output: dict[str, Any]) -> pd.DataFrame:
 def ensure_default_data_loaded() -> None:
     if not SAMPLE_STATEMENT_PATH.exists():
         return
-
-    if not UPLOADS_ENABLED:
-        load_sample_dataset(replace_existing=True)
+    ensure_session_state_defaults()
+    if st.session_state.get("default_sample_loaded"):
         return
-
-    try:
-        store = TransactionStore(
-            persist_directory=DEFAULT_CHROMA_DIR,
-            collection_name=DEFAULT_COLLECTION,
-            embedding_model_name=DEFAULT_EMBEDDING_MODEL,
-        )
-        if store.collection.count() > 0:
-            return
-    except Exception:
-        pass
-
-    transactions = parse_transactions(
-        csv_path=SAMPLE_STATEMENT_PATH,
-        date_column=None,
-        description_column=None,
-        debit_column=None,
-        credit_column=None,
-        amount_column=None,
-        balance_column=None,
-        reference_column=None,
-    )
-    upsert_transactions(
-        transactions=transactions,
-        persist_directory=DEFAULT_CHROMA_DIR,
-        collection_name=DEFAULT_COLLECTION,
-        embedding_model=DEFAULT_EMBEDDING_MODEL,
-        batch_size=100,
-    )
+    load_sample_dataset(replace_existing=True)
+    st.session_state.default_sample_loaded = True
 
 
 def load_sample_dataset(replace_existing: bool = False) -> str:
@@ -321,13 +294,49 @@ def load_sample_dataset(replace_existing: bool = False) -> str:
     return f"Loaded {len(transactions)} sample transactions."
 
 
+def ensure_session_state_defaults() -> None:
+    st.session_state.setdefault("session_storage_dir", None)
+    st.session_state.setdefault("session_collection_name", None)
+    st.session_state.setdefault("using_session_data", False)
+    st.session_state.setdefault("default_sample_loaded", False)
+
+
+def reset_session_storage() -> None:
+    session_storage_dir = st.session_state.get("session_storage_dir")
+    if session_storage_dir:
+        shutil.rmtree(session_storage_dir, ignore_errors=True)
+    st.session_state.session_storage_dir = None
+    st.session_state.session_collection_name = None
+    st.session_state.using_session_data = False
+    get_finance_agent.clear()
+
+
+def get_active_storage() -> tuple[Path, str]:
+    ensure_session_state_defaults()
+    if st.session_state.using_session_data and st.session_state.session_storage_dir:
+        return Path(st.session_state.session_storage_dir), st.session_state.session_collection_name
+    return DEFAULT_CHROMA_DIR, DEFAULT_COLLECTION
+
+
+def create_session_storage() -> tuple[Path, str]:
+    reset_session_storage()
+    session_dir = Path(mkdtemp(prefix="bank_insights_session_"))
+    collection_name = f"bank_transactions_{uuid4().hex[:12]}"
+    st.session_state.session_storage_dir = str(session_dir)
+    st.session_state.session_collection_name = collection_name
+    st.session_state.using_session_data = True
+    return session_dir, collection_name
+
+
 @st.cache_resource(show_spinner=False)
-def get_finance_agent() -> tuple[LangChainFinanceAgent, FinancialTools]:
-    ensure_default_data_loaded()
+def get_finance_agent(
+    persist_directory: str,
+    collection_name: str,
+) -> tuple[LangChainFinanceAgent, FinancialTools]:
     llm = build_local_chat_model(DEFAULT_AGENT_MODEL)
     store = TransactionStore(
-        persist_directory=DEFAULT_CHROMA_DIR,
-        collection_name=DEFAULT_COLLECTION,
+        persist_directory=Path(persist_directory),
+        collection_name=collection_name,
         embedding_model_name=DEFAULT_EMBEDDING_MODEL,
     )
     financial_tools = FinancialTools(store=store, classifier=MerchantClassifier(llm))
@@ -343,6 +352,7 @@ def get_finance_agent() -> tuple[LangChainFinanceAgent, FinancialTools]:
 
 
 def ingest_uploaded_csv(uploaded_file) -> str:
+    session_directory, session_collection = create_session_storage()
     with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
         temp_file.write(uploaded_file.getbuffer())
         temp_path = Path(temp_file.name)
@@ -359,13 +369,16 @@ def ingest_uploaded_csv(uploaded_file) -> str:
     )
     upsert_transactions(
         transactions=transactions,
-        persist_directory=DEFAULT_CHROMA_DIR,
-        collection_name=DEFAULT_COLLECTION,
+        persist_directory=session_directory,
+        collection_name=session_collection,
         embedding_model=DEFAULT_EMBEDDING_MODEL,
         batch_size=100,
     )
     get_finance_agent.clear()
-    return f"Loaded {len(transactions)} transactions from {uploaded_file.name}."
+    return (
+        f"Loaded {len(transactions)} transactions from {uploaded_file.name} into "
+        "temporary session storage."
+    )
 
 
 def metric_card_html(
@@ -550,6 +563,8 @@ def render_chat_panel(agent: LangChainFinanceAgent) -> None:
 def main() -> None:
     if "status_message" not in st.session_state:
         st.session_state.status_message = ""
+    ensure_session_state_defaults()
+    ensure_default_data_loaded()
 
     st.markdown(
         """
@@ -719,7 +734,8 @@ def main() -> None:
     st.markdown(f"[Open live app]({LIVE_APP_URL})")
 
     left_col, right_col = st.columns([1.08, 0.92], gap="large")
-    agent, financial_tools = get_finance_agent()
+    active_directory, active_collection = get_active_storage()
+    agent, financial_tools = get_finance_agent(str(active_directory), active_collection)
 
     with left_col:
         st.markdown("### Workspace")
@@ -733,8 +749,10 @@ def main() -> None:
         with action_col:
             if st.button("Try Sample Data", use_container_width=True):
                 with st.spinner("Loading sample transactions..."):
+                    reset_session_storage()
                     st.session_state.status_message = load_sample_dataset()
-                agent, financial_tools = get_finance_agent()
+                active_directory, active_collection = get_active_storage()
+                agent, financial_tools = get_finance_agent(str(active_directory), active_collection)
         with reset_col:
             if st.button("Reset Chat", use_container_width=True):
                 st.session_state.messages = [
@@ -748,17 +766,16 @@ def main() -> None:
                 st.session_state.queued_prompt = None
                 st.session_state.status_message = "Chat history cleared."
 
-        if UPLOADS_ENABLED:
-            uploaded_file = st.file_uploader("Bank statement CSV", type=["csv"])
-            if uploaded_file is not None and st.button("Process Statement", use_container_width=True):
-                with st.spinner("Parsing statement, generating embeddings, and updating ChromaDB..."):
-                    st.session_state.status_message = ingest_uploaded_csv(uploaded_file)
-                agent, financial_tools = get_finance_agent()
-        else:
-            st.info(
-                "Uploads are disabled in this public demo to avoid storing personal financial data. "
-                "Use `Try Sample Data` here, or enable uploads locally with `ENABLE_STATEMENT_UPLOADS=true`."
-            )
+        uploaded_file = st.file_uploader("Bank statement CSV", type=["csv"])
+        st.info(
+            "Uploads in this app use temporary per-session storage. "
+            "They do not write into the shared demo Chroma collection and are cleared when you switch back to sample data or the session ends."
+        )
+        if uploaded_file is not None and st.button("Process Statement", use_container_width=True):
+            with st.spinner("Parsing statement, generating embeddings, and creating a temporary session index..."):
+                st.session_state.status_message = ingest_uploaded_csv(uploaded_file)
+            active_directory, active_collection = get_active_storage()
+            agent, financial_tools = get_finance_agent(str(active_directory), active_collection)
 
         if st.session_state.status_message:
             st.success(st.session_state.status_message)
