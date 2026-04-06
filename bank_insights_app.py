@@ -355,8 +355,14 @@ def ingest_uploaded_csv(uploaded_file) -> str:
     return f"Loaded {len(transactions)} transactions from {uploaded_file.name}."
 
 
-def metric_card_html(label: str, value: str, tone: str = "default", subtitle: str = "") -> str:
-    tone_class = f"metric-card metric-{tone}"
+def metric_card_html(
+    label: str,
+    value: str,
+    tone: str = "default",
+    subtitle: str = "",
+    size: str = "standard",
+) -> str:
+    tone_class = f"metric-card metric-{tone} metric-size-{size}"
     subtitle_html = f"<div class='metric-subtitle'>{subtitle}</div>" if subtitle else ""
     return (
         f"<div class='{tone_class}'>"
@@ -380,59 +386,48 @@ def render_health_dashboard(financial_tools: FinancialTools) -> None:
         """,
         unsafe_allow_html=True,
     )
-
-    hero_col, supporting_col = st.columns([1.05, 1.35], gap="medium")
-    with hero_col:
-        st.markdown(
+    dashboard_html = "".join(
+        [
             metric_card_html(
                 "Financial Health Score",
                 score,
                 tone="primary",
                 subtitle=health_data.get("income_assumption", ""),
+                size="hero",
             ),
-            unsafe_allow_html=True,
-        )
-    with supporting_col:
-        top_row = st.columns(2, gap="small")
-        with top_row[0]:
-            st.markdown(
-                metric_card_html("Net Savings", format_currency(metrics.get("net_savings", "0"))),
-                unsafe_allow_html=True,
-            )
-        with top_row[1]:
-            st.markdown(
-                metric_card_html("Savings Rate", format_percent(metrics.get("savings_rate_pct", "0"))),
-                unsafe_allow_html=True,
-            )
-        bottom_row = st.columns(2, gap="small")
-        with bottom_row[0]:
-            st.markdown(
-                metric_card_html(
-                    "EMI / Income",
-                    format_percent(metrics.get("emi_to_income_ratio_pct", "0")),
-                ),
-                unsafe_allow_html=True,
-            )
-        with bottom_row[1]:
-            st.markdown(
-                metric_card_html(
-                    "Discretionary Spend",
-                    format_percent(metrics.get("discretionary_spend_pct", "0")),
-                ),
-                unsafe_allow_html=True,
-            )
-
-    income_col, expense_col = st.columns(2, gap="small")
-    with income_col:
-        st.markdown(
-            metric_card_html("Total Income", format_currency(metrics.get("total_income", "0"))),
-            unsafe_allow_html=True,
-        )
-    with expense_col:
-        st.markdown(
-            metric_card_html("Total Expenses", format_currency(metrics.get("total_expenses", "0"))),
-            unsafe_allow_html=True,
-        )
+            metric_card_html(
+                "Net Savings",
+                format_currency(metrics.get("net_savings", "0")),
+                size="compact",
+            ),
+            metric_card_html(
+                "Savings Rate",
+                format_percent(metrics.get("savings_rate_pct", "0")),
+                size="compact",
+            ),
+            metric_card_html(
+                "EMI / Income",
+                format_percent(metrics.get("emi_to_income_ratio_pct", "0")),
+                size="compact",
+            ),
+            metric_card_html(
+                "Discretionary Spend",
+                format_percent(metrics.get("discretionary_spend_pct", "0")),
+                size="compact",
+            ),
+            metric_card_html(
+                "Total Income",
+                format_currency(metrics.get("total_income", "0")),
+                size="wide",
+            ),
+            metric_card_html(
+                "Total Expenses",
+                format_currency(metrics.get("total_expenses", "0")),
+                size="wide",
+            ),
+        ]
+    )
+    st.markdown(f"<div class='dashboard-grid'>{dashboard_html}</div>", unsafe_allow_html=True)
 
     st.subheader("Metric Breakdown")
     metrics_df = tool_output_to_dataframe(health_data)
@@ -596,14 +591,17 @@ def main() -> None:
         .metric-card {
             background: rgba(255, 255, 255, 0.84);
             border: 1px solid rgba(31, 41, 55, 0.06);
-            border-radius: 18px;
-            padding: 0.95rem 1rem;
-            min-height: 120px;
+            border-radius: 22px;
+            padding: 1rem 1.05rem;
+            min-height: 150px;
             box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
         .metric-primary {
             background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,243,224,0.92));
-            min-height: 260px;
+            min-height: 312px;
         }
         .metric-label {
             color: #5b6477;
@@ -613,20 +611,53 @@ def main() -> None:
         }
         .metric-value {
             color: #1f2a44;
-            font-size: 2rem;
+            font-size: clamp(2rem, 2.6vw, 2.75rem);
             font-weight: 700;
-            margin-top: 0.35rem;
-            line-height: 1.08;
+            margin-top: 0.55rem;
+            line-height: 1.02;
+            white-space: nowrap;
         }
         .metric-primary .metric-value {
-            font-size: 4.3rem;
-            margin-top: 1rem;
+            font-size: clamp(3.9rem, 6vw, 5.1rem);
+            margin-top: 1.2rem;
         }
         .metric-subtitle {
             margin-top: 1rem;
             color: #6a7284;
             font-size: 0.96rem;
             line-height: 1.45;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.45fr) repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+            align-items: stretch;
+            margin: 0.8rem 0 1rem;
+        }
+        .metric-size-hero {
+            grid-row: span 2;
+        }
+        .metric-size-wide {
+            min-height: 138px;
+        }
+        @media (max-width: 1100px) {
+            .dashboard-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .metric-size-hero {
+                grid-column: 1 / -1;
+                grid-row: auto;
+                min-height: 240px;
+            }
+        }
+        @media (max-width: 720px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            .metric-value,
+            .metric-primary .metric-value {
+                white-space: normal;
+            }
         }
         .prompt-strip {
             display: flex;
