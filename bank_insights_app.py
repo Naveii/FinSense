@@ -598,6 +598,8 @@ def main() -> None:
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            min-width: 0;
+            overflow: hidden;
         }
         .metric-primary {
             background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,243,224,0.92));
@@ -611,15 +613,26 @@ def main() -> None:
         }
         .metric-value {
             color: #1f2a44;
-            font-size: clamp(2rem, 2.6vw, 2.75rem);
+            font-size: clamp(1.55rem, 2.15vw, 2.25rem);
             font-weight: 700;
             margin-top: 0.55rem;
             line-height: 1.02;
-            white-space: nowrap;
+            letter-spacing: -0.03em;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
         .metric-primary .metric-value {
             font-size: clamp(3.9rem, 6vw, 5.1rem);
             margin-top: 1.2rem;
+            white-space: nowrap;
+            overflow-wrap: normal;
+            word-break: normal;
+        }
+        .metric-size-compact .metric-value {
+            font-size: clamp(1.3rem, 1.75vw, 1.95rem);
+        }
+        .metric-size-wide .metric-value {
+            font-size: clamp(1.75rem, 2.2vw, 2.45rem);
         }
         .metric-subtitle {
             margin-top: 1rem;
