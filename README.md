@@ -2,15 +2,19 @@
 
 A local-first personal finance copilot for bank statement analysis.
 
-It ingests bank statement CSVs into ChromaDB, answers finance questions with citation-backed retrieval, computes a financial health score, groups spending by merchant category, and includes a small RAGAS evaluation harness.
+It ingests bank statement CSVs into ChromaDB, answers finance questions with citation-backed retrieval, computes a financial health score, groups spending by merchant category, and includes a small RAGAS evaluation harness. The current version also supports smarter finance-aware filtering for natural-language questions like "large debits above 5000", "between Jan and Mar", and "total spent on a merchant".
 
 Live app: [bankinsightsapppy-hewucidkqvbxdmstv84vyu.streamlit.app](https://bankinsightsapppy-hewucidkqvbxdmstv84vyu.streamlit.app/)
 
 ## Demo
 
+Overview screen:
+
 <p align="center">
   <img src="https://github.com/user-attachments/assets/564797a2-57d1-4fc8-92b1-faded103d701" alt="Bank Statement Insights app overview" width="900" />
 </p>
+
+Health dashboard:
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/7c2169c1-10e8-45af-beda-8e8b3ffbec97" alt="Bank Statement Insights health dashboard" width="900" />
@@ -45,13 +49,18 @@ flowchart LR
 
 - Local embeddings with `sentence-transformers`
 - ChromaDB-backed semantic retrieval over transactions
+- Hybrid retrieval that combines embeddings with structured finance filters
 - LangChain agent with three tools:
   - `rag_retrieval_tool`
   - `spending_category_analyser`
   - `financial_health_score_tool`
 - Finance-scope guardrail for non-finance questions
-- Streamlit two-panel UI with upload, health dashboard, and chat
+- Streamlit two-panel UI with guided upload actions, health dashboard, and chat
 - Citation-backed answers with supporting tables
+- Smarter query handling for:
+  - amount thresholds like `above 5000`
+  - month windows like `between Jan and Mar`
+  - merchant-focused totals like `total spent on Swiggy`
 - Fixed 10-question RAGAS benchmark harness
 
 ## Project Structure
@@ -60,6 +69,7 @@ flowchart LR
 bank-statement-insights/
 |-- README.md
 |-- .gitignore
+|-- .env.example
 |-- bank_insights_app.py
 |-- bank_langchain_agent.py
 |-- bank_statement_to_chroma.py
@@ -136,9 +146,18 @@ Useful CLI commands:
 ```powershell
 python bank_statement_to_chroma.py "/path/to/statement.csv"
 python query_bank_transactions.py "show all large UPI debits"
+python query_bank_transactions.py "total spent on merchant alpha between Mar and Apr"
 python bank_langchain_agent.py "what is my financial health score?"
 python evaluate_finance_agent_ragas.py
 ```
+
+Example app questions:
+
+- `show all large UPI debits above 5000`
+- `find debit transactions between Jan and Mar`
+- `total spent on Merchant Alpha`
+- `group my spending by merchant type`
+- `what is my financial health score?`
 
 ## Safe Demo Data
 
@@ -165,6 +184,7 @@ Important notes:
 - First load can be slow because local Hugging Face models need to initialize.
 - The cloud app seeds ChromaDB from the sample CSV if the collection is missing.
 - `requirements.txt` pins `protobuf==3.20.3` to stay compatible with ChromaDB on Streamlit Cloud.
+- The deployed app currently uses fictional sample data by default until the user uploads a new CSV.
 
 ## Guardrail Behavior
 
@@ -198,20 +218,39 @@ Demo-safe sample outputs are committed in:
 - `sample_data/sample_ragas_eval.csv`
 - `sample_data/sample_ragas_summary.json`
 
+## Product Notes
+
+The app now has a more guided UX:
+
+- `Try Sample Data` for instant demo setup
+- `Reset Chat` to clear the conversation state
+- one-click example prompts in the chat panel
+- a cleaner dashboard layout with a primary score card and supporting metric cards
+- citations and supporting transactions tucked into expanders to reduce clutter
+
+The finance copilot is also more deliberate than a plain semantic-search demo:
+
+- it uses rule-based routing before falling back to the small local LLM router
+- it applies finance-aware filters for amount, month range, merchant phrases, and debit/credit type
+- it surfaces applied filters in citations so the answer is easier to trust
+
 ## What I Learned
 
 - Bank exports are messy in real life, so encoding, delimiter, and header handling matter as much as retrieval quality.
 - The best product feeling came from pairing semantic retrieval with deterministic finance-specific rules instead of relying entirely on an LLM.
 - Deployment work mattered more than expected because ChromaDB and protobuf compatibility can break on hosted runtimes.
 - Citation quality improved when the answer layer and UI both used the same structured context payload.
+- The UX got much better once the app guided the user through sample data, dashboard review, and question prompts instead of dropping them into a blank interface.
 
 ## What I Would Improve Next
 
 - Add `.xls` and `.xlsx` ingestion, not just CSV-first parsing.
 - Add stronger merchant normalization for UPI-heavy statements.
 - Improve retrieval filtering so queries like "large debits above 5000" combine semantic and numeric constraints.
+- Add richer time expressions like `last month`, `this quarter`, and `past 30 days`.
+- Add merchant summary cards like `top merchants by spend`.
 - Add tests around routing, parsing, and health score calculations.
-- Replace the placeholder demo section with a real GIF and annotated screenshots.
+- Add a real demo GIF alongside the screenshots.
 
 ## Notes
 
