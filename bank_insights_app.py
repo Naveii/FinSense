@@ -610,55 +610,92 @@ def main() -> None:
     st.markdown(
         """
         <style>
-        .stApp {
-            background:
+        :root {
+            --app-bg:
                 radial-gradient(circle at top left, rgba(255, 224, 178, 0.35), transparent 28%),
                 linear-gradient(180deg, #f7f1e6 0%, #f4f7fb 55%, #edf3fb 100%);
+            --surface-bg: rgba(255, 255, 255, 0.78);
+            --surface-strong: rgba(255, 255, 255, 0.84);
+            --surface-border: rgba(31, 41, 55, 0.08);
+            --surface-shadow: 0 18px 44px rgba(15, 23, 42, 0.06);
+            --text-strong: #20253a;
+            --text-body: #1f2a44;
+            --text-muted: #5b6477;
+            --text-subtle: #6a7284;
+            --hero-accent: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,243,224,0.92));
+            --hero-border: rgba(245, 158, 11, 0.12);
+            --chip-bg: rgba(255,255,255,0.76);
+            --expander-bg: rgba(255,255,255,0.72);
+            --button-bg: rgba(255,255,255,0.82);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --app-bg:
+                    radial-gradient(circle at top left, rgba(20, 184, 166, 0.14), transparent 24%),
+                    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.16), transparent 30%),
+                    linear-gradient(180deg, #07111f 0%, #0b1728 52%, #122033 100%);
+                --surface-bg: rgba(9, 18, 32, 0.82);
+                --surface-strong: rgba(10, 20, 36, 0.9);
+                --surface-border: rgba(148, 163, 184, 0.18);
+                --surface-shadow: 0 22px 50px rgba(2, 6, 23, 0.4);
+                --text-strong: #edf4ff;
+                --text-body: #dbe7f5;
+                --text-muted: #b3c0d4;
+                --text-subtle: #93a4bc;
+                --hero-accent: linear-gradient(145deg, rgba(15,23,42,0.96), rgba(9, 32, 53, 0.94));
+                --hero-border: rgba(45, 212, 191, 0.18);
+                --chip-bg: rgba(15, 23, 42, 0.72);
+                --expander-bg: rgba(10, 18, 32, 0.76);
+                --button-bg: rgba(15, 23, 42, 0.8);
+            }
+        }
+        .stApp {
+            background: var(--app-bg);
         }
         .block-container {
             padding-top: 2rem;
             padding-bottom: 3rem;
         }
         div[data-testid="stChatMessage"] {
-            background: rgba(255, 255, 255, 0.76);
-            border: 1px solid rgba(31, 41, 55, 0.08);
+            background: var(--surface-bg);
+            border: 1px solid var(--surface-border);
             border-radius: 18px;
             padding: 0.7rem 0.9rem;
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
         }
         .hero-card, .panel-card {
-            background: rgba(255, 255, 255, 0.74);
-            border: 1px solid rgba(31, 41, 55, 0.07);
+            background: var(--surface-bg);
+            border: 1px solid var(--surface-border);
             border-radius: 24px;
             padding: 1.1rem 1.2rem;
-            box-shadow: 0 18px 44px rgba(15, 23, 42, 0.06);
+            box-shadow: var(--surface-shadow);
             backdrop-filter: blur(8px);
         }
         .hero-card h1 {
             margin: 0;
             font-size: clamp(2.5rem, 5vw, 3.4rem);
             line-height: 1.02;
-            color: #20253a;
+            color: var(--text-strong);
         }
         .hero-card p {
             margin: 0.75rem 0 0;
-            color: #5b6477;
+            color: var(--text-muted);
             font-size: 1.02rem;
             max-width: 58rem;
         }
         .section-kicker {
             margin-top: -0.2rem;
             margin-bottom: 0.95rem;
-            color: #6a7284;
+            color: var(--text-subtle);
             font-size: 0.96rem;
         }
         .metric-card {
-            background: rgba(255, 255, 255, 0.84);
-            border: 1px solid rgba(31, 41, 55, 0.06);
+            background: var(--surface-strong);
+            border: 1px solid var(--surface-border);
             border-radius: 22px;
             padding: 1.05rem 1.1rem;
             min-height: 156px;
-            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -666,18 +703,18 @@ def main() -> None:
             overflow: hidden;
         }
         .metric-primary {
-            background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,243,224,0.92));
+            background: var(--hero-accent);
             min-height: 260px;
-            border-color: rgba(245, 158, 11, 0.12);
+            border-color: var(--hero-border);
         }
         .metric-label {
-            color: #5b6477;
+            color: var(--text-muted);
             font-size: 0.92rem;
             font-weight: 600;
             letter-spacing: 0.02em;
         }
         .metric-value {
-            color: #1f2a44;
+            color: var(--text-body);
             font-size: clamp(1.55rem, 2.15vw, 2.25rem);
             font-weight: 700;
             margin-top: 0.55rem;
@@ -695,7 +732,7 @@ def main() -> None:
         }
         .metric-subtitle {
             margin-top: 1rem;
-            color: #6a7284;
+            color: var(--text-subtle);
             font-size: 0.96rem;
             line-height: 1.45;
         }
@@ -733,31 +770,60 @@ def main() -> None:
             margin: 0.2rem 0 1.1rem;
         }
         .prompt-chip {
-            background: rgba(255,255,255,0.76);
-            border: 1px solid rgba(31,41,55,0.08);
+            background: var(--chip-bg);
+            border: 1px solid var(--surface-border);
             border-radius: 999px;
             padding: 0.35rem 0.7rem;
-            color: #4c5567;
+            color: var(--text-muted);
             font-size: 0.88rem;
         }
         div[data-testid="stButton"] > button {
             border-radius: 999px;
-            border: 1px solid rgba(31, 41, 55, 0.08);
+            border: 1px solid var(--surface-border);
             min-height: 2.6rem;
-            background: rgba(255,255,255,0.82);
+            background: var(--button-bg);
+            color: var(--text-body);
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+        }
+        div[data-testid="stButton"] > button:hover {
+            border-color: rgba(20, 184, 166, 0.35);
+            color: var(--text-strong);
         }
         div[data-testid="stFileUploader"] section {
             border-radius: 18px;
-            background: rgba(255, 255, 255, 0.72);
+            background: var(--surface-bg);
+            border: 1px solid var(--surface-border);
         }
         div[data-testid="stExpander"] {
             border-radius: 16px;
         }
         div[data-testid="stExpander"] details {
-            background: rgba(255,255,255,0.72);
-            border: 1px solid rgba(31,41,55,0.06);
+            background: var(--expander-bg);
+            border: 1px solid var(--surface-border);
             border-radius: 16px;
             padding: 0.2rem 0.55rem;
+        }
+        div[data-testid="stExpander"] summary,
+        div[data-testid="stFileUploader"] label,
+        div[data-testid="stMarkdownContainer"] p,
+        div[data-testid="stMarkdownContainer"] li,
+        div[data-testid="stAlertContentInfo"],
+        div[data-testid="stAlertContentSuccess"] {
+            color: var(--text-body);
+        }
+        div[data-testid="stChatInput"] textarea,
+        div[data-testid="stTextInput"] input {
+            background: var(--surface-bg) !important;
+            color: var(--text-body) !important;
+            border: 1px solid var(--surface-border) !important;
+        }
+        div[data-testid="stChatInput"] textarea::placeholder,
+        div[data-testid="stTextInput"] input::placeholder {
+            color: var(--text-subtle) !important;
+        }
+        div[data-testid="stDataFrame"] [data-testid="stTable"] {
+            background: var(--surface-bg);
+            border-radius: 14px;
         }
         </style>
         """,
