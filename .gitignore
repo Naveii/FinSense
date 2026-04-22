@@ -5,7 +5,8 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
-.streamlit/
+.streamlit/*
+!.streamlit/config.toml
 data/chroma_bank_transactions/
 sample_data/chroma_bank_transactions_snapshot/
 eval/ragas_eval_results/
