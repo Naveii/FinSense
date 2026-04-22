@@ -622,6 +622,7 @@ def main() -> None:
             --button-text: #1f2a44;
             --button-text-muted: #34425d;
             --chat-shell-bg: rgba(255, 255, 255, 0.9);
+            --chat-wrapper-bg: rgba(255, 255, 255, 0.72);
             --hero-accent: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,243,224,0.92));
             --hero-border: rgba(245, 158, 11, 0.12);
             --chip-bg: rgba(255,255,255,0.76);
@@ -650,6 +651,7 @@ def main() -> None:
                 --button-text: #e7eefb;
                 --button-text-muted: #c8d5e6;
                 --chat-shell-bg: rgba(12, 22, 38, 0.88);
+                --chat-wrapper-bg: rgba(12, 22, 38, 0.76);
                 --hero-accent: linear-gradient(145deg, rgba(15,23,42,0.96), rgba(9, 32, 53, 0.94));
                 --hero-border: rgba(45, 212, 191, 0.18);
                 --chip-bg: rgba(15, 23, 42, 0.72);
@@ -899,15 +901,17 @@ def main() -> None:
             fill: var(--text-body) !important;
         }
         div[data-testid="stFileUploaderDropzone"] button {
-            background: var(--input-bg) !important;
-            border: 1px solid var(--surface-border) !important;
-            color: var(--button-text) !important;
+            background: var(--accent) !important;
+            border: 1px solid transparent !important;
+            color: #ffffff !important;
             box-shadow: none !important;
+            font-weight: 700 !important;
+            opacity: 1 !important;
         }
         div[data-testid="stFileUploaderDropzone"] button *,
         div[data-testid="stFileUploaderDropzone"] button p,
         div[data-testid="stFileUploaderDropzone"] button span {
-            color: var(--button-text) !important;
+            color: #ffffff !important;
         }
         div[data-testid="stFileUploaderDropzone"] small,
         div[data-testid="stFileUploaderDropzone"] [data-testid="stMarkdownContainer"] p,
@@ -958,12 +962,19 @@ def main() -> None:
             border: none !important;
             box-shadow: none !important;
         }
-        div[data-testid="stChatInput"] div[data-baseweb="textarea"],
-        div[data-testid="stChatInput"] div[data-baseweb="base-input"] {
-            background: var(--chat-shell-bg) !important;
+        div[data-testid="stChatInput"] > div > div {
+            background: var(--chat-wrapper-bg) !important;
             border: 1px solid var(--surface-border) !important;
             border-radius: 18px !important;
-            box-shadow: 0 8px 24px rgba(2, 6, 23, 0.18) !important;
+            padding: 0.55rem 0.65rem !important;
+            box-shadow: 0 10px 28px rgba(2, 6, 23, 0.18) !important;
+        }
+        div[data-testid="stChatInput"] div[data-baseweb="textarea"],
+        div[data-testid="stChatInput"] div[data-baseweb="base-input"] {
+            background: var(--input-bg) !important;
+            border: 1px solid transparent !important;
+            border-radius: 14px !important;
+            box-shadow: none !important;
             overflow: hidden !important;
         }
         div[data-testid="stChatInput"] div[data-baseweb="textarea"] > div,
@@ -975,6 +986,8 @@ def main() -> None:
             border: 1px solid var(--surface-border) !important;
             color: var(--button-text) !important;
             border-radius: 14px !important;
+            min-height: 2.4rem !important;
+            min-width: 2.4rem !important;
         }
         div[data-testid="stChatInput"] button svg {
             color: var(--button-text) !important;
