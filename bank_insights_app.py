@@ -37,7 +37,6 @@ st.set_page_config(
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_STATEMENT_PATH = PROJECT_ROOT / "sample_data" / "sample_bank_statement.csv"
-SAMPLE_CHROMA_SNAPSHOT_DIR = PROJECT_ROOT / "sample_data" / "chroma_bank_transactions_snapshot"
 LIVE_APP_URL = "https://bankinsightsapppy-hewucidkqvbxdmstv84vyu.streamlit.app/"
 EXAMPLE_PROMPTS = [
     "Show all large UPI debits",
@@ -271,26 +270,8 @@ def ensure_default_data_loaded() -> None:
 
 
 def load_sample_dataset(replace_existing: bool = False) -> str:
-    if SAMPLE_CHROMA_SNAPSHOT_DIR.exists():
-        if replace_existing:
-            shutil.rmtree(DEFAULT_CHROMA_DIR, ignore_errors=True)
-        shutil.copytree(SAMPLE_CHROMA_SNAPSHOT_DIR, DEFAULT_CHROMA_DIR, dirs_exist_ok=True)
-        get_finance_agent.clear()
-        get_health_dashboard_data.clear()
-        try:
-            snapshot_client = chromadb.PersistentClient(path=str(DEFAULT_CHROMA_DIR))
-            snapshot_collection = snapshot_client.get_collection(DEFAULT_COLLECTION)
-            transaction_count = snapshot_collection.count()
-        except Exception:
-            transaction_count = 0
-        return f"Loaded {transaction_count} sample transactions."
-
     if replace_existing:
-        reset_client = chromadb.PersistentClient(path=str(DEFAULT_CHROMA_DIR))
-        try:
-            reset_client.delete_collection(DEFAULT_COLLECTION)
-        except Exception:
-            pass
+        shutil.rmtree(DEFAULT_CHROMA_DIR, ignore_errors=True)
 
     transactions = parse_transactions(
         csv_path=SAMPLE_STATEMENT_PATH,
@@ -360,11 +341,22 @@ def get_finance_agent(
             llm_cache["model"] = build_local_chat_model(DEFAULT_AGENT_MODEL)
         return llm_cache["model"]
 
-    store = TransactionStore(
-        persist_directory=Path(persist_directory),
-        collection_name=collection_name,
-        embedding_model_name=DEFAULT_EMBEDDING_MODEL,
-    )
+    store_path = Path(persist_directory)
+    try:
+        store = TransactionStore(
+            persist_directory=store_path,
+            collection_name=collection_name,
+            embedding_model_name=DEFAULT_EMBEDDING_MODEL,
+        )
+    except Exception:
+        if store_path.resolve() != DEFAULT_CHROMA_DIR.resolve():
+            raise
+        load_sample_dataset(replace_existing=True)
+        store = TransactionStore(
+            persist_directory=store_path,
+            collection_name=collection_name,
+            embedding_model_name=DEFAULT_EMBEDDING_MODEL,
+        )
     financial_tools = FinancialTools(store=store, classifier=MerchantClassifier(llm_loader))
     agent = LangChainFinanceAgent(
         tools=[
