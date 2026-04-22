@@ -4,10 +4,12 @@ import argparse
 import csv
 import hashlib
 import json
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from tempfile import gettempdir
 from typing import Any
 
 import chromadb
@@ -424,8 +426,26 @@ def upsert_transactions(
         return
 
     embedding_client = SentenceTransformer(embedding_model)
+    persist_directory.mkdir(parents=True, exist_ok=True)
     chroma_client = chromadb.PersistentClient(path=str(persist_directory))
-    collection = chroma_client.get_or_create_collection(name=collection_name)
+    try:
+        collection = chroma_client.get_or_create_collection(name=collection_name)
+    except Exception:
+        resolved_directory = persist_directory.resolve()
+        generated_locations = (
+            (DATA_DIR / "chroma_bank_transactions").resolve(),
+            Path(gettempdir()).resolve(),
+        )
+        can_reset_generated_store = (
+            resolved_directory == generated_locations[0]
+            or generated_locations[1] in resolved_directory.parents
+        )
+        if not can_reset_generated_store:
+            raise
+        shutil.rmtree(persist_directory, ignore_errors=True)
+        persist_directory.mkdir(parents=True, exist_ok=True)
+        chroma_client = chromadb.PersistentClient(path=str(persist_directory))
+        collection = chroma_client.get_or_create_collection(name=collection_name)
 
     documents = [transaction.document for transaction in transactions]
     embeddings = embed_documents(

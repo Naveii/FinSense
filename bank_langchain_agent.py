@@ -23,9 +23,24 @@ from sentence_transformers import SentenceTransformer
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
-DEFAULT_CHROMA_DIR = Path(
-    os.getenv("CHROMA_PERSIST_DIR", str(DATA_DIR / "chroma_bank_transactions"))
-)
+
+
+def default_chroma_dir() -> Path:
+    configured_dir = os.getenv("CHROMA_PERSIST_DIR")
+    if configured_dir:
+        return Path(configured_dir)
+
+    # Streamlit Cloud checks the repo out under /mount/src. Keep generated
+    # Chroma files in runtime storage so stale or partially-created DB files in
+    # the source checkout cannot break collection creation on reboot.
+    if str(PROJECT_ROOT).startswith("/mount/src"):
+        runtime_root = Path(os.getenv("TMPDIR", "/tmp")) / "bank_statement_insights"
+        return runtime_root / "chroma_bank_transactions"
+
+    return DATA_DIR / "chroma_bank_transactions"
+
+
+DEFAULT_CHROMA_DIR = default_chroma_dir()
 DEFAULT_COLLECTION = os.getenv("CHROMA_COLLECTION_NAME", "bank_transactions")
 DEFAULT_EMBEDDING_MODEL = os.getenv(
     "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
