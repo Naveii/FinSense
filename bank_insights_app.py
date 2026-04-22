@@ -616,6 +616,10 @@ def main() -> None:
             --text-body: #1f2a44;
             --text-muted: #5b6477;
             --text-subtle: #6a7284;
+            --input-bg: #ffffff;
+            --input-text: #1f2a44;
+            --input-muted: #7a8495;
+            --button-text: #1f2a44;
             --hero-accent: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,243,224,0.92));
             --hero-border: rgba(245, 158, 11, 0.12);
             --chip-bg: rgba(255,255,255,0.76);
@@ -638,6 +642,10 @@ def main() -> None:
                 --text-body: #dbe7f5;
                 --text-muted: #b3c0d4;
                 --text-subtle: #93a4bc;
+                --input-bg: rgba(12, 22, 38, 0.96);
+                --input-text: #e7eefb;
+                --input-muted: #97a8bd;
+                --button-text: #e7eefb;
                 --hero-accent: linear-gradient(145deg, rgba(15,23,42,0.96), rgba(9, 32, 53, 0.94));
                 --hero-border: rgba(45, 212, 191, 0.18);
                 --chip-bg: rgba(15, 23, 42, 0.72);
@@ -652,6 +660,18 @@ def main() -> None:
         }
         .stApp {
             background: var(--app-bg);
+        }
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+        }
+        header[data-testid="stHeader"]::before {
+            background: var(--app-bg) !important;
+        }
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        .stDeployButton {
+            color: var(--text-body) !important;
         }
         .block-container {
             max-width: 1440px;
@@ -724,11 +744,14 @@ def main() -> None:
         .section-kicker {
             margin-top: -0.2rem;
             margin-bottom: 0.82rem;
-            color: var(--text-subtle);
+            color: var(--text-muted);
             font-size: 0.93rem;
             line-height: 1.55;
         }
-        h3 {
+        h1, h2, h3, h4, h5, h6,
+        div[data-testid="stMarkdownContainer"] h1,
+        div[data-testid="stMarkdownContainer"] h2,
+        div[data-testid="stMarkdownContainer"] h3 {
             color: var(--text-strong);
             letter-spacing: -0.02em;
         }
@@ -834,14 +857,23 @@ def main() -> None:
             border: 1px solid var(--surface-border);
             min-height: 2.75rem;
             background: var(--button-bg);
-            color: var(--text-body);
+            color: var(--button-text);
             box-shadow: 0 7px 18px rgba(15, 23, 42, 0.055);
             font-weight: 650;
+        }
+        div[data-testid="stButton"] > button p,
+        div[data-testid="stButton"] > button span {
+            color: var(--button-text) !important;
         }
         div[data-testid="stButton"] > button:hover {
             border-color: rgba(21, 154, 120, 0.4);
             color: var(--text-strong);
             transform: translateY(-1px);
+        }
+        div[data-testid="stButton"] > button[kind="primary"],
+        div[data-testid="stButton"] > button[kind="primary"] p,
+        div[data-testid="stButton"] > button[kind="primary"] span {
+            color: #ffffff !important;
         }
         div[data-testid="stFileUploader"] section {
             border-radius: 18px;
@@ -852,6 +884,14 @@ def main() -> None:
         div[data-testid="stFileUploaderDropzone"] {
             border-radius: 16px !important;
             border-color: rgba(21, 154, 120, 0.24) !important;
+            background: var(--surface-strong) !important;
+        }
+        div[data-testid="stFileUploaderDropzone"] * {
+            color: var(--text-body) !important;
+        }
+        div[data-testid="stFileUploaderDropzone"] small,
+        div[data-testid="stFileUploaderDropzone"] [data-testid="stMarkdownContainer"] p {
+            color: var(--text-muted) !important;
         }
         div[data-testid="stAlert"] {
             border-radius: 18px;
@@ -877,14 +917,33 @@ def main() -> None:
         }
         div[data-testid="stChatInput"] textarea,
         div[data-testid="stTextInput"] input {
-            background: var(--surface-bg) !important;
-            color: var(--text-body) !important;
+            background: var(--input-bg) !important;
+            color: var(--input-text) !important;
             border: 1px solid var(--surface-border) !important;
             border-radius: 18px !important;
         }
+        div[data-testid="stChatInput"],
+        div[data-testid="stChatInput"] > div,
+        div[data-testid="stChatInput"] form,
+        div[data-baseweb="textarea"],
+        div[data-baseweb="base-input"] {
+            background: transparent !important;
+        }
+        div[data-testid="stChatInput"] > div {
+            border-color: var(--surface-border) !important;
+        }
+        div[data-testid="stChatInput"] button {
+            background: var(--button-bg) !important;
+            border: 1px solid var(--surface-border) !important;
+            color: var(--button-text) !important;
+        }
+        div[data-testid="stChatInput"] button svg {
+            color: var(--button-text) !important;
+            fill: var(--button-text) !important;
+        }
         div[data-testid="stChatInput"] textarea::placeholder,
         div[data-testid="stTextInput"] input::placeholder {
-            color: var(--text-subtle) !important;
+            color: var(--input-muted) !important;
         }
         div[data-testid="stDataFrame"] [data-testid="stTable"] {
             background: var(--surface-bg);
