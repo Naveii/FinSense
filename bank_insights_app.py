@@ -532,7 +532,7 @@ def render_chat_panel(agent: LangChainFinanceAgent) -> None:
     st.markdown("### Finance Copilot")
     st.markdown(
         """
-        <div class="section-kicker">Ask natural questions about merchants, large debits, spending mix, or overall financial health.</div>
+        <div class="section-kicker">Ask about merchants, large debits, spending mix, or financial health. Answers include evidence from matching transactions.</div>
         """,
         unsafe_allow_html=True,
     )
@@ -560,9 +560,10 @@ def render_chat_panel(agent: LangChainFinanceAgent) -> None:
         unsafe_allow_html=True,
     )
 
-    prompt_columns = st.columns(len(EXAMPLE_PROMPTS))
+    st.markdown("<div class='prompt-label'>Suggested questions</div>", unsafe_allow_html=True)
+    prompt_columns = st.columns(2, gap="small")
     for index, example_prompt in enumerate(EXAMPLE_PROMPTS):
-        with prompt_columns[index]:
+        with prompt_columns[index % 2]:
             if st.button(example_prompt, key=f"example_prompt_{index}", use_container_width=True):
                 st.session_state.queued_prompt = example_prompt
 
@@ -602,6 +603,7 @@ def main() -> None:
     st.markdown(
         """
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
         :root {
             --app-bg:
                 radial-gradient(circle at top left, rgba(255, 224, 178, 0.35), transparent 28%),
@@ -619,6 +621,8 @@ def main() -> None:
             --chip-bg: rgba(255,255,255,0.76);
             --expander-bg: rgba(255,255,255,0.72);
             --button-bg: rgba(255,255,255,0.82);
+            --accent: #159a78;
+            --accent-soft: rgba(21, 154, 120, 0.12);
         }
         @media (prefers-color-scheme: dark) {
             :root {
@@ -639,55 +643,102 @@ def main() -> None:
                 --chip-bg: rgba(15, 23, 42, 0.72);
                 --expander-bg: rgba(10, 18, 32, 0.76);
                 --button-bg: rgba(15, 23, 42, 0.8);
+                --accent: #5dd6b2;
+                --accent-soft: rgba(93, 214, 178, 0.13);
             }
+        }
+        html, body, .stApp, button, input, textarea, [class*="css"] {
+            font-family: "DM Sans", system-ui, sans-serif;
         }
         .stApp {
             background: var(--app-bg);
         }
         .block-container {
-            padding-top: 2rem;
+            max-width: 1440px;
+            padding-top: 1.4rem;
             padding-bottom: 3rem;
         }
         div[data-testid="stChatMessage"] {
             background: var(--surface-bg);
             border: 1px solid var(--surface-border);
-            border-radius: 18px;
-            padding: 0.7rem 0.9rem;
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+            border-radius: 20px;
+            padding: 0.78rem 0.95rem;
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.07);
         }
         .hero-card, .panel-card {
             background: var(--surface-bg);
             border: 1px solid var(--surface-border);
-            border-radius: 24px;
-            padding: 1.1rem 1.2rem;
+            border-radius: 22px;
+            padding: 1rem 1.15rem;
             box-shadow: var(--surface-shadow);
             backdrop-filter: blur(8px);
         }
+        .hero-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
         .hero-card h1 {
             margin: 0;
-            font-size: clamp(2.5rem, 5vw, 3.4rem);
+            font-size: clamp(2rem, 3.6vw, 2.85rem);
             line-height: 1.02;
             color: var(--text-strong);
+            letter-spacing: -0.055em;
         }
         .hero-card p {
-            margin: 0.75rem 0 0;
+            margin: 0.55rem 0 0;
             color: var(--text-muted);
-            font-size: 1.02rem;
+            font-size: 0.98rem;
             max-width: 58rem;
+        }
+        .hero-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+            min-width: 250px;
+        }
+        .live-link, .status-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            border: 1px solid var(--surface-border);
+            padding: 0.48rem 0.78rem;
+            font-size: 0.84rem;
+            font-weight: 600;
+            text-decoration: none !important;
+        }
+        .live-link {
+            background: var(--accent);
+            color: #ffffff !important;
+            border-color: transparent;
+        }
+        .status-pill {
+            background: var(--accent-soft);
+            color: var(--text-body);
         }
         .section-kicker {
             margin-top: -0.2rem;
-            margin-bottom: 0.95rem;
+            margin-bottom: 0.82rem;
             color: var(--text-subtle);
-            font-size: 0.96rem;
+            font-size: 0.93rem;
+            line-height: 1.55;
+        }
+        h3 {
+            color: var(--text-strong);
+            letter-spacing: -0.02em;
         }
         .metric-card {
             background: var(--surface-strong);
             border: 1px solid var(--surface-border);
-            border-radius: 22px;
-            padding: 1.05rem 1.1rem;
-            min-height: 156px;
-            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+            border-radius: 18px;
+            padding: 0.95rem 1rem;
+            min-height: 136px;
+            box-shadow: 0 9px 24px rgba(15, 23, 42, 0.065);
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -696,18 +747,18 @@ def main() -> None:
         }
         .metric-primary {
             background: var(--hero-accent);
-            min-height: 260px;
+            min-height: 214px;
             border-color: var(--hero-border);
         }
         .metric-label {
             color: var(--text-muted);
-            font-size: 0.92rem;
+            font-size: 0.86rem;
             font-weight: 600;
             letter-spacing: 0.02em;
         }
         .metric-value {
             color: var(--text-body);
-            font-size: clamp(1.55rem, 2.15vw, 2.25rem);
+            font-size: clamp(1.45rem, 1.9vw, 2.05rem);
             font-weight: 700;
             margin-top: 0.55rem;
             line-height: 1.02;
@@ -716,7 +767,7 @@ def main() -> None:
             word-break: break-word;
         }
         .metric-primary .metric-value {
-            font-size: clamp(3.2rem, 5.1vw, 4.4rem);
+            font-size: clamp(2.8rem, 4.5vw, 3.9rem);
             margin-top: 0.9rem;
             white-space: nowrap;
             overflow-wrap: normal;
@@ -731,9 +782,9 @@ def main() -> None:
         .dashboard-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 1rem;
+            gap: 0.78rem;
             align-items: stretch;
-            margin: 0.8rem 0 1rem;
+            margin: 0.7rem 0 0.85rem;
         }
         .metric-size-hero {
             grid-column: 1 / -1;
@@ -759,32 +810,53 @@ def main() -> None:
             display: flex;
             gap: 0.45rem;
             flex-wrap: wrap;
-            margin: 0.2rem 0 1.1rem;
+            margin: 0.2rem 0 0.75rem;
         }
         .prompt-chip {
-            background: var(--chip-bg);
+            background: var(--accent-soft);
             border: 1px solid var(--surface-border);
             border-radius: 999px;
             padding: 0.35rem 0.7rem;
+            color: var(--text-body);
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+        .prompt-label {
             color: var(--text-muted);
-            font-size: 0.88rem;
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            margin: 0.3rem 0 0.45rem;
+            text-transform: uppercase;
         }
         div[data-testid="stButton"] > button {
-            border-radius: 999px;
+            border-radius: 16px;
             border: 1px solid var(--surface-border);
-            min-height: 2.6rem;
+            min-height: 2.75rem;
             background: var(--button-bg);
             color: var(--text-body);
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+            box-shadow: 0 7px 18px rgba(15, 23, 42, 0.055);
+            font-weight: 650;
         }
         div[data-testid="stButton"] > button:hover {
-            border-color: rgba(20, 184, 166, 0.35);
+            border-color: rgba(21, 154, 120, 0.4);
             color: var(--text-strong);
+            transform: translateY(-1px);
         }
         div[data-testid="stFileUploader"] section {
             border-radius: 18px;
             background: var(--surface-bg);
             border: 1px solid var(--surface-border);
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+        }
+        div[data-testid="stFileUploaderDropzone"] {
+            border-radius: 16px !important;
+            border-color: rgba(21, 154, 120, 0.24) !important;
+        }
+        div[data-testid="stAlert"] {
+            border-radius: 18px;
+            border: 1px solid var(--surface-border);
+            background: var(--surface-bg);
         }
         div[data-testid="stExpander"] {
             border-radius: 16px;
@@ -808,6 +880,7 @@ def main() -> None:
             background: var(--surface-bg) !important;
             color: var(--text-body) !important;
             border: 1px solid var(--surface-border) !important;
+            border-radius: 18px !important;
         }
         div[data-testid="stChatInput"] textarea::placeholder,
         div[data-testid="stTextInput"] input::placeholder {
@@ -817,22 +890,37 @@ def main() -> None:
             background: var(--surface-bg);
             border-radius: 14px;
         }
+        @media (max-width: 980px) {
+            .hero-card {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+            .hero-actions {
+                justify-content: flex-start;
+                min-width: 0;
+            }
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
     st.markdown(
-        """
+        f"""
         <div class="hero-card">
-            <h1>Bank Statement Insights</h1>
-            <p>Upload a statement, review your financial health, and chat with a finance copilot that answers with evidence from your transactions.</p>
+            <div>
+                <h1>Bank Statement Insights</h1>
+                <p>Upload a statement, review financial health, and chat with a citation-backed finance copilot.</p>
+            </div>
+            <div class="hero-actions">
+                <span class="status-pill">Private session storage</span>
+                <a class="live-link" href="{LIVE_APP_URL}" target="_blank" rel="noopener noreferrer">Open live app</a>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.markdown(f"[Open live app]({LIVE_APP_URL})")
 
-    left_col, right_col = st.columns([1.08, 0.92], gap="large")
+    left_col, right_col = st.columns([0.98, 1.02], gap="large")
     active_directory, active_collection = get_active_storage()
     agent, _ = get_finance_agent(str(active_directory), active_collection)
 
@@ -840,7 +928,7 @@ def main() -> None:
         st.markdown("### Workspace")
         st.markdown(
             """
-            <div class="section-kicker">Start with a sample statement or upload your own CSV, then review the dashboard before asking questions.</div>
+            <div class="section-kicker">Start with sample data or upload your own CSV. Uploaded statements stay in temporary session storage.</div>
             """,
             unsafe_allow_html=True,
         )
@@ -866,7 +954,7 @@ def main() -> None:
                 st.session_state.status_message = "Chat history cleared."
 
         uploaded_file = st.file_uploader("Bank statement CSV", type=["csv"])
-        st.info(
+        st.caption(
             "Uploads in this app use temporary per-session storage. "
             "They do not write into the shared demo Chroma collection and are cleared when you switch back to sample data or the session ends."
         )
