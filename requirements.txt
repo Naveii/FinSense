@@ -8,5 +8,5 @@ langchain==1.2.15
 langchain-community==0.4.1
 langchain-huggingface==1.2.1
 transformers==4.46.3
-huggingface-hub==0.26.5
+huggingface-hub==0.34.4
 openai==2.30.0
