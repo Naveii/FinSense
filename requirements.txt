@@ -1,6 +1,6 @@
 streamlit==1.56.0
 pandas==3.0.2
-chromadb==1.5.5
+chromadb==0.5.23
 protobuf==3.20.3
 sentence-transformers==5.3.0
 torch==2.11.0
