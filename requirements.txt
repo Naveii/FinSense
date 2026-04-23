@@ -7,6 +7,6 @@ torch==2.11.0
 langchain==1.2.15
 langchain-community==0.4.1
 langchain-huggingface==1.2.1
-transformers==5.5.0
-huggingface-hub==1.9.0
+transformers==4.46.3
+huggingface-hub==0.26.5
 openai==2.30.0
