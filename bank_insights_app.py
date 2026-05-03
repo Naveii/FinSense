@@ -25,6 +25,8 @@ from bank_langchain_agent import (
     MerchantClassifier,
     TransactionStore,
     build_local_chat_model,
+    get_chroma_client,
+    reset_chroma_client_cache,
 )
 from bank_statement_to_chroma import parse_transactions, upsert_transactions
 
@@ -259,7 +261,7 @@ def ensure_default_data_loaded() -> None:
     if not SAMPLE_STATEMENT_PATH.exists():
         return
     try:
-        default_client = chromadb.PersistentClient(path=str(DEFAULT_CHROMA_DIR))
+        default_client = get_chroma_client(str(DEFAULT_CHROMA_DIR))
         default_collection = default_client.get_collection(DEFAULT_COLLECTION)
         if default_collection.count() > 0:
             return
@@ -272,6 +274,7 @@ def ensure_default_data_loaded() -> None:
 def load_sample_dataset(replace_existing: bool = False) -> str:
     if replace_existing:
         shutil.rmtree(DEFAULT_CHROMA_DIR, ignore_errors=True)
+        reset_chroma_client_cache()
 
     transactions = parse_transactions(
         csv_path=SAMPLE_STATEMENT_PATH,
@@ -292,6 +295,7 @@ def load_sample_dataset(replace_existing: bool = False) -> str:
     )
     get_finance_agent.clear()
     get_health_dashboard_data.clear()
+    reset_chroma_client_cache()
     return f"Loaded {len(transactions)} sample transactions."
 
 
@@ -310,6 +314,7 @@ def reset_session_storage() -> None:
     st.session_state.using_session_data = False
     get_finance_agent.clear()
     get_health_dashboard_data.clear()
+    reset_chroma_client_cache()
 
 
 def get_active_storage() -> tuple[Path, str]:

@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import re
+from functools import lru_cache
 from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -23,6 +24,7 @@ from sentence_transformers import SentenceTransformer
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
+IS_STREAMLIT_CLOUD_RUNTIME = str(PROJECT_ROOT).startswith("/mount/src")
 
 
 def default_chroma_dir() -> Path:
@@ -33,7 +35,7 @@ def default_chroma_dir() -> Path:
     # Streamlit Cloud checks the repo out under /mount/src. Keep generated
     # Chroma files in runtime storage so stale or partially-created DB files in
     # the source checkout cannot break collection creation on reboot.
-    if str(PROJECT_ROOT).startswith("/mount/src"):
+    if IS_STREAMLIT_CLOUD_RUNTIME:
         runtime_root = Path(os.getenv("TMPDIR", "/tmp")) / "bank_statement_insights"
         return runtime_root / "chroma_bank_transactions"
 
@@ -46,6 +48,17 @@ DEFAULT_EMBEDDING_MODEL = os.getenv(
     "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
 )
 DEFAULT_AGENT_MODEL = os.getenv("AGENT_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+
+
+@lru_cache(maxsize=32)
+def get_chroma_client(client_key: str):
+    if IS_STREAMLIT_CLOUD_RUNTIME and not os.getenv("FORCE_PERSISTENT_CHROMA"):
+        return chromadb.EphemeralClient()
+    return chromadb.PersistentClient(path=client_key)
+
+
+def reset_chroma_client_cache() -> None:
+    get_chroma_client.cache_clear()
 
 CATEGORY_OPTIONS = [
     "income",
@@ -499,7 +512,7 @@ class TransactionStore:
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         self._embedding_model: SentenceTransformer | None = None
         self._all_transactions_cache: list[dict[str, Any]] | None = None
-        self.chroma_client = chromadb.PersistentClient(path=str(persist_directory))
+        self.chroma_client = get_chroma_client(str(persist_directory))
         self.collection = self.chroma_client.get_or_create_collection(name=collection_name)
 
     def _get_embedding_model(self) -> SentenceTransformer:

@@ -14,6 +14,7 @@ from typing import Any
 
 import chromadb
 from sentence_transformers import SentenceTransformer
+from bank_langchain_agent import get_chroma_client, reset_chroma_client_cache
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -427,7 +428,7 @@ def upsert_transactions(
 
     embedding_client = SentenceTransformer(embedding_model)
     persist_directory.mkdir(parents=True, exist_ok=True)
-    chroma_client = chromadb.PersistentClient(path=str(persist_directory))
+    chroma_client = get_chroma_client(str(persist_directory))
     try:
         collection = chroma_client.get_or_create_collection(name=collection_name)
     except Exception:
@@ -444,7 +445,8 @@ def upsert_transactions(
             raise
         shutil.rmtree(persist_directory, ignore_errors=True)
         persist_directory.mkdir(parents=True, exist_ok=True)
-        chroma_client = chromadb.PersistentClient(path=str(persist_directory))
+        reset_chroma_client_cache()
+        chroma_client = get_chroma_client(str(persist_directory))
         collection = chroma_client.get_or_create_collection(name=collection_name)
 
     documents = [transaction.document for transaction in transactions]
