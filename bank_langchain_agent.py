@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import argparse
 import json
+import math
 import os
 import re
-from functools import lru_cache
 from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
@@ -50,10 +51,87 @@ DEFAULT_EMBEDDING_MODEL = os.getenv(
 DEFAULT_AGENT_MODEL = os.getenv("AGENT_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 
 
+class InMemoryVectorCollection:
+    def __init__(self) -> None:
+        self._records: dict[str, dict[str, Any]] = {}
+
+    def upsert(
+        self,
+        ids: list[str],
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+        embeddings: list[list[float]],
+    ) -> None:
+        for index, transaction_id in enumerate(ids):
+            self._records[transaction_id] = {
+                "document": documents[index],
+                "metadata": metadatas[index],
+                "embedding": embeddings[index],
+            }
+
+    def count(self) -> int:
+        return len(self._records)
+
+    def get(self, limit: int | None = None, include: list[str] | None = None) -> dict[str, Any]:
+        records = list(self._records.items())
+        if limit is not None:
+            records = records[:limit]
+        return {
+            "ids": [transaction_id for transaction_id, _ in records],
+            "documents": [record["document"] for _, record in records],
+            "metadatas": [record["metadata"] for _, record in records],
+        }
+
+    def query(
+        self,
+        query_embeddings: list[list[float]],
+        n_results: int,
+        include: list[str] | None = None,
+    ) -> dict[str, Any]:
+        query_embedding = query_embeddings[0] if query_embeddings else []
+        ranked = sorted(
+            self._records.items(),
+            key=lambda item: self._cosine_distance(query_embedding, item[1]["embedding"]),
+        )[:n_results]
+        return {
+            "ids": [[transaction_id for transaction_id, _ in ranked]],
+            "documents": [[record["document"] for _, record in ranked]],
+            "metadatas": [[record["metadata"] for _, record in ranked]],
+            "distances": [
+                [self._cosine_distance(query_embedding, record["embedding"]) for _, record in ranked]
+            ],
+        }
+
+    @staticmethod
+    def _cosine_distance(left: list[float], right: list[float]) -> float:
+        if not left or not right:
+            return 1.0
+        dot_product = sum(a * b for a, b in zip(left, right))
+        left_norm = math.sqrt(sum(a * a for a in left))
+        right_norm = math.sqrt(sum(b * b for b in right))
+        if left_norm == 0 or right_norm == 0:
+            return 1.0
+        return 1.0 - (dot_product / (left_norm * right_norm))
+
+
+class InMemoryVectorClient:
+    def __init__(self) -> None:
+        self._collections: dict[str, InMemoryVectorCollection] = {}
+
+    def get_or_create_collection(self, name: str):
+        self._collections.setdefault(name, InMemoryVectorCollection())
+        return self._collections[name]
+
+    def get_collection(self, name: str):
+        if name not in self._collections:
+            raise ValueError(f"Collection '{name}' does not exist.")
+        return self._collections[name]
+
+
 @lru_cache(maxsize=32)
 def get_chroma_client(client_key: str):
     if IS_STREAMLIT_CLOUD_RUNTIME and not os.getenv("FORCE_PERSISTENT_CHROMA"):
-        return chromadb.EphemeralClient()
+        return InMemoryVectorClient()
     return chromadb.PersistentClient(path=client_key)
 
 

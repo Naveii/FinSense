@@ -295,7 +295,6 @@ def load_sample_dataset(replace_existing: bool = False) -> str:
     )
     get_finance_agent.clear()
     get_health_dashboard_data.clear()
-    reset_chroma_client_cache()
     return f"Loaded {len(transactions)} sample transactions."
 
 
