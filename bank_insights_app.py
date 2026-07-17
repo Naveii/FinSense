@@ -556,7 +556,17 @@ def render_chat_panel(agent: LangChainFinanceAgent | None, data_loaded: bool) ->
 
     if not data_loaded:
         st.info("Load the sample dataset or a CSV statement to unlock transaction questions and citations.")
-        st.chat_input("Ask about your transactions", disabled=True)
+        with st.form("finance_chat_composer", clear_on_submit=True, border=False):
+            text_column, submit_column = st.columns([8, 1], gap="small")
+            with text_column:
+                st.text_input(
+                    "Ask about your transactions",
+                    placeholder="Ask about your transactions...",
+                    label_visibility="collapsed",
+                    disabled=True,
+                )
+            with submit_column:
+                st.form_submit_button("Send", use_container_width=True, disabled=True)
         return
 
     st.markdown(
@@ -571,11 +581,9 @@ def render_chat_panel(agent: LangChainFinanceAgent | None, data_loaded: bool) ->
     )
 
     st.markdown("<div class='prompt-label'>Suggested questions</div>", unsafe_allow_html=True)
-    prompt_columns = st.columns(2, gap="small")
     for index, example_prompt in enumerate(EXAMPLE_PROMPTS):
-        with prompt_columns[index % 2]:
-            if st.button(example_prompt, key=f"example_prompt_{index}", use_container_width=True):
-                st.session_state.queued_prompt = example_prompt
+        if st.button(example_prompt, key=f"example_prompt_{index}", use_container_width=True):
+            st.session_state.queued_prompt = example_prompt
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -593,7 +601,17 @@ def render_chat_panel(agent: LangChainFinanceAgent | None, data_loaded: bool) ->
                         hide_index=True,
                     )
 
-    prompt = st.chat_input("Ask about your transactions")
+    with st.form("finance_chat_composer", clear_on_submit=True, border=False):
+        text_column, submit_column = st.columns([8, 1], gap="small")
+        with text_column:
+            prompt = st.text_input(
+                "Ask about your transactions",
+                placeholder="Ask about your transactions...",
+                label_visibility="collapsed",
+            )
+        with submit_column:
+            st.form_submit_button("Send", use_container_width=True)
+
     if not prompt and st.session_state.queued_prompt:
         prompt = st.session_state.queued_prompt
         st.session_state.queued_prompt = None
@@ -1239,6 +1257,49 @@ def main() -> None:
         div[data-testid="stChatInput"] textarea::placeholder,
         div[data-testid="stTextInput"] input::placeholder {
             color: var(--input-muted) !important;
+        }
+        div[data-testid="stForm"] {
+            background: var(--chat-wrapper-bg) !important;
+            border: 1px solid var(--surface-border) !important;
+            border-radius: 0.9rem !important;
+            padding: 0.42rem 0.5rem !important;
+            box-shadow: 0 8px 22px rgba(2, 6, 23, 0.12) !important;
+        }
+        div[data-testid="stForm"] div[data-testid="stTextInput"] {
+            margin-bottom: 0 !important;
+        }
+        div[data-testid="stForm"] div[data-testid="stTextInput"] input {
+            min-height: 2.45rem !important;
+            padding: 0.55rem 0.75rem !important;
+            border-radius: 0.72rem !important;
+        }
+        div[data-testid="stForm"] div[data-testid="stFormSubmitButton"] {
+            margin: 0 !important;
+        }
+        div[data-testid="stForm"] div[data-testid="stFormSubmitButton"] > button {
+            width: 2.45rem !important;
+            min-width: 2.45rem !important;
+            height: 2.45rem !important;
+            min-height: 2.45rem !important;
+            padding: 0 !important;
+            border-radius: 50% !important;
+            background: linear-gradient(135deg, var(--accent), #a157f5) !important;
+            border-color: transparent !important;
+            box-shadow: 0 6px 15px rgba(99, 91, 255, 0.24) !important;
+        }
+        div[data-testid="stForm"] div[data-testid="stFormSubmitButton"] > button p {
+            font-size: 0 !important;
+        }
+        div[data-testid="stForm"] div[data-testid="stFormSubmitButton"] > button p::after {
+            content: "\2191";
+            color: #ffffff;
+            font-size: 1.2rem;
+            font-weight: 500;
+            line-height: 1;
+        }
+        div[data-testid="stForm"] div[data-testid="stFormSubmitButton"] > button:disabled {
+            opacity: 0.45 !important;
+            box-shadow: none !important;
         }
         div[data-testid="stDataFrame"] [data-testid="stTable"] {
             background: var(--surface-bg);
