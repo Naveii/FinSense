@@ -439,11 +439,14 @@ def render_health_dashboard(persist_directory: str, collection_name: str) -> Non
     metrics = health_data.get("metrics", {})
     score = metrics.get("financial_health_score", "0")
 
-    st.markdown("### Financial Health")
     st.markdown(
-        """
-        <div class="section-kicker">A quick snapshot of income resilience, repayment pressure, and discretionary spend.</div>
-        """,
+        """<div class="health-heading">
+            <div>
+                <h3>Financial Health</h3>
+                <p>A quick snapshot of income resilience, repayment pressure, and discretionary spend.</p>
+            </div>
+            <span class="health-freshness"><i></i>Updated just now</span>
+        </div>""",
         unsafe_allow_html=True,
     )
     dashboard_html = "".join(
@@ -453,7 +456,7 @@ def render_health_dashboard(persist_directory: str, collection_name: str) -> Non
                 score,
                 tone="primary",
                 subtitle=(
-                    f"{health_data.get('income_assumption', '')}<span class='score-band'>Estimated</span>"
+                    f"{health_data.get('income_assumption', '')}<span class='score-band'>Estimated score</span>"
                 ),
                 size="hero",
             ),
@@ -720,16 +723,31 @@ def main() -> None:
         .stDeployButton {
             color: var(--text-body) !important;
         }
+        @media (min-width: 981px) {
+            header[data-testid="stHeader"] {
+                height: 0 !important;
+                visibility: hidden !important;
+            }
+            [data-testid="stToolbar"],
+            [data-testid="stDecoration"],
+            [data-testid="stStatusWidget"],
+            .stDeployButton {
+                display: none !important;
+            }
+        }
         .block-container {
-            max-width: 1520px;
-            padding-top: 1.25rem;
+            max-width: 1400px;
+            padding-top: 1.4rem;
             padding-bottom: 2.5rem;
         }
         section[data-testid="stSidebar"] {
             background: var(--rail-bg);
             border-right: 1px solid var(--surface-border);
+            width: 13.75rem !important;
+            min-width: 13.75rem !important;
         }
         section[data-testid="stSidebar"] > div:first-child {
+            width: 13.75rem !important;
             padding-top: 1rem;
         }
         .rail-brand {
@@ -765,9 +783,13 @@ def main() -> None:
         }
         section[data-testid="stSidebar"] label[data-baseweb="radio"] {
             margin: 0 !important;
-            padding: 0.55rem 0.55rem;
+            padding: 0.58rem 0.62rem;
             border-radius: 0.65rem;
             color: var(--text-muted) !important;
+            transition: background 150ms ease, color 150ms ease;
+        }
+        section[data-testid="stSidebar"] label[data-baseweb="radio"] > div:first-child {
+            display: none !important;
         }
         section[data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) {
             background: var(--accent-soft);
@@ -777,7 +799,7 @@ def main() -> None:
         .rail-bottom {
             position: fixed;
             bottom: 1.2rem;
-            width: min(15rem, calc(100vw - 2rem));
+            width: 12.55rem;
             margin: 0 0.35rem;
             padding: 0.8rem;
             border-radius: 0.8rem;
@@ -875,6 +897,38 @@ def main() -> None:
             font-size: 0.88rem;
             line-height: 1.55;
         }
+        .health-heading {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.85rem;
+        }
+        .health-heading h3 {
+            margin: 0;
+        }
+        .health-heading p {
+            margin: 0.38rem 0 0;
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            line-height: 1.55;
+        }
+        .health-freshness {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.38rem;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            white-space: nowrap;
+            padding-top: 0.3rem;
+        }
+        .health-freshness i {
+            width: 0.42rem;
+            height: 0.42rem;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 0 3px rgba(28, 167, 108, 0.1);
+        }
         h1, h2, h3, h4, h5, h6,
         div[data-testid="stMarkdownContainer"] h1,
         div[data-testid="stMarkdownContainer"] h2,
@@ -911,16 +965,17 @@ def main() -> None:
             border-radius: 0.52rem;
             background: var(--accent-soft);
             border: 1px solid rgba(99, 91, 255, 0.18);
+            color: var(--accent);
             position: relative;
             flex: 0 0 auto;
         }
         .metric-icon::after {
             content: "";
             position: absolute;
-            width: 0.42rem;
-            height: 0.42rem;
-            border-radius: 50%;
-            background: var(--accent);
+            width: 0.55rem;
+            height: 0.36rem;
+            border: 1.5px solid currentColor;
+            border-radius: 0.12rem;
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
@@ -930,8 +985,14 @@ def main() -> None:
             border-color: rgba(28, 167, 108, 0.18);
         }
         .metric-primary .metric-icon::after {
-            background: var(--success);
+            color: var(--success);
         }
+        .metric-card:nth-child(2) .metric-icon { color: #477bff; background: rgba(71, 123, 255, 0.13); border-color: rgba(71, 123, 255, 0.18); }
+        .metric-card:nth-child(3) .metric-icon { color: #7a5cff; background: rgba(122, 92, 255, 0.13); border-color: rgba(122, 92, 255, 0.18); }
+        .metric-card:nth-child(4) .metric-icon { color: #ec9a36; background: rgba(236, 154, 54, 0.13); border-color: rgba(236, 154, 54, 0.18); }
+        .metric-card:nth-child(5) .metric-icon { color: #e85479; background: rgba(232, 84, 121, 0.13); border-color: rgba(232, 84, 121, 0.18); }
+        .metric-card:nth-child(6) .metric-icon { color: #28ad75; background: rgba(40, 173, 117, 0.13); border-color: rgba(40, 173, 117, 0.18); }
+        .metric-card:nth-child(7) .metric-icon { color: #db5477; background: rgba(219, 84, 119, 0.13); border-color: rgba(219, 84, 119, 0.18); }
         .metric-label {
             color: var(--text-muted);
             font-size: 0.86rem;
@@ -1065,7 +1126,15 @@ def main() -> None:
             border: 1px dashed rgba(99, 91, 255, 0.32) !important;
             background: var(--chat-wrapper-bg) !important;
             color: var(--text-body) !important;
-            padding: 1.1rem 0.6rem !important;
+            min-height: 7.35rem !important;
+            padding: 1.15rem 0.75rem !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        div[data-testid="stFileUploaderDropzone"] > div {
+            width: 100% !important;
+            text-align: center !important;
         }
         div[data-testid="stFileUploaderDropzone"] *,
         div[data-testid="stFileUploaderDropzone"] svg {
@@ -1124,15 +1193,20 @@ def main() -> None:
             border: 1px solid var(--surface-border) !important;
             border-radius: 18px !important;
         }
-        div[data-testid="stChatInput"],
         div[data-testid="stChatInput"] {
+            background: transparent !important;
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stChatInput"] form {
             background: var(--chat-wrapper-bg) !important;
             border: 1px solid var(--surface-border) !important;
-            border-radius: 18px !important;
-            padding: 0.55rem 0.65rem !important;
+            border-radius: 1rem !important;
+            padding: 0.52rem 0.6rem !important;
             box-shadow: 0 10px 28px rgba(2, 6, 23, 0.18) !important;
         }
-        div[data-testid="stChatInput"] form,
         div[data-testid="stChatInput"] [data-baseweb="textarea"] {
             background: transparent !important;
             border: none !important;
@@ -1181,6 +1255,12 @@ def main() -> None:
             }
             .rail-bottom {
                 display: none;
+            }
+            .health-heading {
+                display: block;
+            }
+            .health-freshness {
+                margin-top: 0.35rem;
             }
         }
         </style>
