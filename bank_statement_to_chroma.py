@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
-import json
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,9 +12,8 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import Any
 
-import chromadb
 from sentence_transformers import SentenceTransformer
-from bank_langchain_agent import get_chroma_client, reset_chroma_client_cache
+from bank_langchain_agent import clear_chroma_client, get_chroma_client
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -125,6 +124,25 @@ def clean_value(value: Any) -> str:
     return str(value).strip()
 
 
+def redact_sensitive_text(value: str) -> str:
+    """Keep merchant text useful while removing common personal/bank identifiers."""
+    redacted = clean_value(value)
+    redacted = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", redacted)
+    redacted = re.sub(r"\b[A-Za-z0-9._]{2,}@[A-Za-z][A-Za-z0-9]{1,}\b", "[REDACTED_UPI]", redacted)
+    redacted = re.sub(r"\b[A-Z]{4}0[A-Z0-9]{6}\b", "[REDACTED_IFSC]", redacted, flags=re.IGNORECASE)
+    redacted = re.sub(r"(?<!\w)\d{6,}(?!\w)", "[REDACTED_NUMBER]", redacted)
+    return redacted
+
+
+def redact_reference(reference: str) -> str:
+    """References are identifiers, not retrieval features; retain only a stable generic token."""
+    cleaned = clean_value(reference)
+    if not cleaned:
+        return ""
+    digest = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:8].upper()
+    return f"TRANSFER_REF_{digest}"
+
+
 def is_separator_value(value: str) -> bool:
     cleaned = clean_value(value)
     return bool(cleaned) and set(cleaned) == {"*"}
@@ -181,7 +199,6 @@ def build_document(
     transaction_type: str,
     balance: Decimal | None,
     reference: str,
-    row: dict[str, Any],
 ) -> str:
     parts = [
         f"Date: {date_value or 'unknown'}",
@@ -195,14 +212,6 @@ def build_document(
         parts.append(f"Balance: {format(balance, 'f')}")
     if reference:
         parts.append(f"Reference: {reference}")
-
-    extras = {
-        key: clean_value(value)
-        for key, value in row.items()
-        if clean_value(value)
-    }
-    if extras:
-        parts.append(f"Raw Row: {json.dumps(extras, ensure_ascii=True, sort_keys=True)}")
 
     return " | ".join(parts)
 
@@ -356,17 +365,21 @@ def parse_transactions(
             continue
 
         date_value = parse_date(row.get(date_column, ""))
-        description = clean_value(row.get(description_column, ""))
+        description = redact_sensitive_text(row.get(description_column, ""))
         if not date_value or not description:
             continue
         if is_separator_value(date_value) or is_separator_value(description):
+            continue
+        if len(date_value) != 10 or date_value.count("-") != 2:
             continue
 
         amount, transaction_type = infer_amount_and_type(
             row, debit_column, credit_column, amount_column
         )
+        if amount is None:
+            continue
         balance = parse_decimal(row.get(balance_column, "")) if balance_column else None
-        reference = clean_value(row.get(reference_column, "")) if reference_column else ""
+        reference = redact_reference(row.get(reference_column, "")) if reference_column else ""
 
         document = build_document(
             date_value=date_value,
@@ -375,9 +388,8 @@ def parse_transactions(
             transaction_type=transaction_type,
             balance=balance,
             reference=reference,
-            row=row,
         )
-        transaction_id = transaction_hash(csv_path, index, document)
+        transaction_id = transaction_hash(Path("statement.csv"), index, document)
         metadata = {
             "row_number": index,
             "date": date_value,
@@ -386,7 +398,6 @@ def parse_transactions(
             "transaction_type": transaction_type,
             "balance": stringify_decimal(balance),
             "reference": reference or None,
-            "source_file": str(csv_path),
         }
         parsed_transactions.append(
             ParsedTransaction(
@@ -445,7 +456,7 @@ def upsert_transactions(
             raise
         shutil.rmtree(persist_directory, ignore_errors=True)
         persist_directory.mkdir(parents=True, exist_ok=True)
-        reset_chroma_client_cache()
+        clear_chroma_client(str(persist_directory))
         chroma_client = get_chroma_client(str(persist_directory))
         collection = chroma_client.get_or_create_collection(name=collection_name)
 

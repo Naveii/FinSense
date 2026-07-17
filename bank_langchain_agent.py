@@ -9,7 +9,6 @@ import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
@@ -128,15 +127,18 @@ class InMemoryVectorClient:
         return self._collections[name]
 
 
-@lru_cache(maxsize=32)
+_IN_MEMORY_CLIENTS: dict[str, InMemoryVectorClient] = {}
+
+
 def get_chroma_client(client_key: str):
     if IS_STREAMLIT_CLOUD_RUNTIME and not os.getenv("FORCE_PERSISTENT_CHROMA"):
-        return InMemoryVectorClient()
+        return _IN_MEMORY_CLIENTS.setdefault(client_key, InMemoryVectorClient())
     return chromadb.PersistentClient(path=client_key)
 
 
-def reset_chroma_client_cache() -> None:
-    get_chroma_client.cache_clear()
+def clear_chroma_client(client_key: str) -> None:
+    """Discard a Cloud in-memory collection when its owning session is reset."""
+    _IN_MEMORY_CLIENTS.pop(client_key, None)
 
 CATEGORY_OPTIONS = [
     "income",
@@ -160,7 +162,6 @@ DISCRETIONARY_CATEGORIES = {
     "shopping",
     "travel_transport",
     "entertainment",
-    "cash_transfer",
 }
 
 INCOME_KEYWORDS = ("salary", "payroll", "income", "bonus", "reimbursement", "interest")
@@ -172,6 +173,7 @@ PERSONAL_FINANCE_KEYWORDS = (
     "transactions",
     "spend",
     "spent",
+    "spending",
     "expense",
     "expenses",
     "savings",
@@ -787,17 +789,24 @@ class FinancialTools:
                 if record_matches_filters(transaction, filters)
             ]
 
-            if filters.get("merchant_terms") or filters.get("min_amount") or filters.get("max_amount") or filters.get("start_date") or filters.get("transaction_type"):
-                matched_ids = {transaction["transaction_id"] for transaction in filtered_transactions}
-                records = [
-                    match for match in semantic_matches if match["transaction_id"] in matched_ids
-                ]
-                if not records:
-                    records = filtered_transactions
+            has_structured_filters = any(
+                filters.get(key)
+                for key in (
+                    "merchant_terms",
+                    "min_amount",
+                    "max_amount",
+                    "start_date",
+                    "transaction_type",
+                )
+            )
+            if has_structured_filters:
+                # Structured finance questions must aggregate every matching row,
+                # not only the first semantic-search page.
+                records = filtered_transactions
             else:
                 records = semantic_matches
 
-            records = sort_records_for_question(records, query)[:top_k]
+            records = sort_records_for_question(records, query)
             total_amount = sum(
                 (abs(parse_amount(record.get("metadata", {}).get("amount"))) for record in records),
                 Decimal("0"),
@@ -805,7 +814,7 @@ class FinancialTools:
             result = {
                 "query": query,
                 "top_k": top_k,
-                "matches": records,
+                "matches": records[:top_k],
                 "applied_filters": filters,
                 "aggregate": {
                     "count": len(records),
@@ -820,18 +829,14 @@ class FinancialTools:
         @tool("spending_category_analyser")
         def spending_category_analyser(query: str = "") -> str:
             """Group transactions by merchant type and summarize spending using an LLM classifier."""
-            transactions = self.store.all_transactions()
-            if query:
-                filters = build_query_filters(query, transactions)
-                matched_ids = {
-                    match["transaction_id"]
-                    for match in self.store.semantic_search(query=query, top_k=min(25, len(transactions))).get("matches", [])
-                }
-                transactions = [
-                    transaction
-                    for transaction in transactions
-                    if transaction["transaction_id"] in matched_ids or record_matches_filters(transaction, filters)
-                ]
+            all_transactions = self.store.all_transactions()
+            filters = build_query_filters(query, all_transactions) if query else {}
+            transactions = [
+                transaction
+                for transaction in all_transactions
+                if transaction["metadata"].get("transaction_type") == "debit"
+                and record_matches_filters(transaction, filters)
+            ]
 
             category_totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
             grouped_transactions: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -853,11 +858,12 @@ class FinancialTools:
                         "transaction_type": metadata.get("transaction_type"),
                     }
                 )
-                if amount < 0:
-                    category_totals[category] += abs(amount)
+                category_totals[category] += abs(amount)
 
             summary = {
                 "query_filter": query or None,
+                "applied_filters": filters,
+                "transaction_scope": "debit transactions only",
                 "categories": [
                     {
                         "category": category,
@@ -962,7 +968,8 @@ class FinancialTools:
                 "notes": [
                     "Savings rate = (income - expenses) / income.",
                     "EMI ratio uses transactions classified as emi_loan or matching loan keywords.",
-                    "Discretionary spend includes food_dining, shopping, travel_transport, entertainment, and cash_transfer.",
+                    "Discretionary spend includes food_dining, shopping, travel_transport, and entertainment.",
+                    "Health score is an estimate based on the classified transactions and stated income assumption.",
                 ],
                 "categorized_transactions": categorized,
             }
@@ -1105,22 +1112,21 @@ def build_agent_answer(question: str, selected_tool: str, tool_output: dict[str,
 
         if "total" in question_lower or "sum" in question_lower:
             candidate_pool = debit_matches if "debit" in question_lower else credit_matches if "credit" in question_lower else matches
-            total = sum(
-                (abs(parse_amount(match.get("metadata", {}).get("amount"))) for match in candidate_pool),
-                Decimal("0"),
-            )
+            total = parse_amount(aggregate.get("total_amount", "0"))
+            aggregate_count = int(aggregate.get("count", len(candidate_pool)))
             merchant = merchant_name_from_description(
                 str(candidate_pool[0].get("metadata", {}).get("description", "")) if candidate_pool else ""
             )
-            return f"The total across {len(candidate_pool)} matching transactions for {merchant} is {format_currency(total)}."
+            return f"The total across {aggregate_count} matching transactions for {merchant} is {format_currency(total)}."
 
         if any(token in question_lower for token in ("spent on", "payments to", "paid to")):
             total = parse_amount(aggregate.get("total_amount", "0"))
+            aggregate_count = int(aggregate.get("count", len(matches)))
             merchant = merchant_name_from_description(
                 str(matches[0].get("metadata", {}).get("description", ""))
             )
             return (
-                f"You spent {format_currency(total)} across {len(matches)} matching transactions for {merchant}."
+                f"You spent {format_currency(total)} across {aggregate_count} matching transactions for {merchant}."
             )
 
         top_match = matches[0]

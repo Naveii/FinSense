@@ -26,7 +26,7 @@ Health dashboard:
 flowchart LR
     A["Bank Statement CSV"] --> B["CSV parser and normalizer<br/>bank_statement_to_chroma.py"]
     B --> C["Local embedding model<br/>all-MiniLM-L6-v2"]
-    C --> D["ChromaDB persistent store<br/>data/chroma_bank_transactions"]
+    C --> D["Local ChromaDB store<br/>data/chroma_bank_transactions"]
 
     E["Streamlit UI<br/>bank_insights_app.py"] --> F["LangChain finance agent<br/>bank_langchain_agent.py"]
     F --> G["Finance scope guardrail"]
@@ -42,7 +42,7 @@ flowchart LR
     F --> K
 
     L["RAGAS evaluation harness<br/>evaluate_finance_agent_ragas.py"] --> F
-    L --> M["Faithfulness and context relevance outputs"]
+    L --> M["Faithfulness and context precision outputs"]
 ```
 
 ## Features
@@ -63,7 +63,7 @@ flowchart LR
   - merchant-focused totals like `total spent on Swiggy`
 - Lazy model loading so the dashboard renders before the local chat model is initialized
 - Faster dashboard computation via cached health summaries and heuristic-first categorization
-- Prebuilt sample Chroma snapshot for lighter cloud cold starts
+- User-driven sample loading to avoid cold-start model work
 - Fixed 10-question RAGAS benchmark harness
 
 ## Project Structure
@@ -84,7 +84,6 @@ bank-statement-insights/
 |   `-- config.toml
 |-- sample_data/
 |   |-- sample_bank_statement.csv
-|   |-- chroma_bank_transactions_snapshot/
 |   |-- sample_ragas_eval.csv
 |   `-- sample_ragas_summary.json
 |-- docs/
@@ -168,13 +167,13 @@ Example app questions:
 The repo includes fictional demo-safe files:
 
 - `sample_data/sample_bank_statement.csv`
-- `sample_data/chroma_bank_transactions_snapshot/`
 - `sample_data/sample_ragas_eval.csv`
 - `sample_data/sample_ragas_summary.json`
 
-The deployed app prefers the prebuilt sample Chroma snapshot on startup, which avoids regenerating embeddings during many cold starts.
-If the snapshot is missing, the app can still rebuild the sample collection from the fictional CSV.
-Uploaded statements are kept in isolated per-session temporary storage so private uploads do not leak into the shared public demo dataset.
+The sample data is fictional and is loaded only when the visitor selects `Try Sample Data`.
+On Streamlit Community Cloud, the vector store is held in process memory to avoid persistent SQLite compatibility issues. Uploaded statements are kept in isolated temporary session storage and are discarded when the session is reset or the app restarts.
+
+Before indexing, the app keeps only retrieval-required fields and redacts common identifiers such as UPI IDs, phone/account-like numbers, IFSC codes, and transfer references. Do not upload a statement unless you are comfortable processing it in the Streamlit runtime.
 
 ## Deployment
 
@@ -188,9 +187,9 @@ Deployment notes:
 
 Important notes:
 
-- First chat request can still be slower than the initial page render because the local Hugging Face model is loaded lazily.
-- The app now avoids loading the chat model on first paint and uses a prebuilt sample Chroma snapshot when available.
-- The cloud app can still seed ChromaDB from the sample CSV if the sample collection is missing.
+- The app does not load sample data, embeddings, or the agent until a visitor loads sample data or processes a CSV.
+- First ingestion and some ambiguous questions can be slower because local Hugging Face models load lazily.
+- The Cloud deployment uses an in-memory vector store; local use retains ChromaDB persistence.
 - `requirements.txt` pins `protobuf==3.20.3` to stay compatible with ChromaDB on Streamlit Cloud.
 - Uploaded statements are now indexed in isolated per-session temporary storage instead of the shared demo Chroma collection.
 - The health dashboard uses cached summaries and heuristic-first categorization to reduce rerun latency.
@@ -215,7 +214,7 @@ Refused examples:
 The evaluation harness measures:
 
 - faithfulness
-- context relevance
+- context precision against the fixed reference answers
 
 Local outputs are written to:
 
@@ -226,6 +225,16 @@ Demo-safe sample outputs are committed in:
 
 - `sample_data/sample_ragas_eval.csv`
 - `sample_data/sample_ragas_summary.json`
+
+## Tests
+
+Run the deterministic privacy and finance-calculation tests:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+The RAGAS harness is a separate, model-dependent evaluation and is not a replacement for these regression tests.
 
 ## Product Notes
 

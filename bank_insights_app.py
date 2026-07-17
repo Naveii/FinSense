@@ -11,7 +11,6 @@ from uuid import uuid4
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
-import chromadb
 import pandas as pd
 import streamlit as st
 
@@ -25,8 +24,7 @@ from bank_langchain_agent import (
     MerchantClassifier,
     TransactionStore,
     build_local_chat_model,
-    get_chroma_client,
-    reset_chroma_client_cache,
+    clear_chroma_client,
 )
 from bank_statement_to_chroma import parse_transactions, upsert_transactions
 
@@ -39,7 +37,7 @@ st.set_page_config(
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SAMPLE_STATEMENT_PATH = PROJECT_ROOT / "sample_data" / "sample_bank_statement.csv"
-LIVE_APP_URL = "https://bankinsightsapppy-hewucidkqvbxdmstv84vyu.streamlit.app/"
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 EXAMPLE_PROMPTS = [
     "Show all large UPI debits",
     "Group my spending by merchant type",
@@ -257,24 +255,10 @@ def tool_output_to_dataframe(tool_output: dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def ensure_default_data_loaded() -> None:
-    if not SAMPLE_STATEMENT_PATH.exists():
-        return
-    try:
-        default_client = get_chroma_client(str(DEFAULT_CHROMA_DIR))
-        default_collection = default_client.get_collection(DEFAULT_COLLECTION)
-        if default_collection.count() > 0:
-            return
-    except Exception:
-        pass
-
-    load_sample_dataset(replace_existing=True)
-
-
 def load_sample_dataset(replace_existing: bool = False) -> str:
     if replace_existing:
         shutil.rmtree(DEFAULT_CHROMA_DIR, ignore_errors=True)
-        reset_chroma_client_cache()
+        clear_chroma_client(str(DEFAULT_CHROMA_DIR))
 
     transactions = parse_transactions(
         csv_path=SAMPLE_STATEMENT_PATH,
@@ -302,18 +286,19 @@ def ensure_session_state_defaults() -> None:
     st.session_state.setdefault("session_storage_dir", None)
     st.session_state.setdefault("session_collection_name", None)
     st.session_state.setdefault("using_session_data", False)
+    st.session_state.setdefault("data_loaded", False)
 
 
 def reset_session_storage() -> None:
     session_storage_dir = st.session_state.get("session_storage_dir")
     if session_storage_dir:
+        clear_chroma_client(str(session_storage_dir))
         shutil.rmtree(session_storage_dir, ignore_errors=True)
     st.session_state.session_storage_dir = None
     st.session_state.session_collection_name = None
     st.session_state.using_session_data = False
     get_finance_agent.clear()
     get_health_dashboard_data.clear()
-    reset_chroma_client_cache()
 
 
 def get_active_storage() -> tuple[Path, str]:
@@ -389,28 +374,39 @@ def get_health_dashboard_data(
 
 
 def ingest_uploaded_csv(uploaded_file) -> str:
-    session_directory, session_collection = create_session_storage()
-    with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
-        temp_file.write(uploaded_file.getbuffer())
-        temp_path = Path(temp_file.name)
+    if uploaded_file.size > MAX_UPLOAD_BYTES:
+        raise ValueError("The statement is larger than 10 MB. Please upload a smaller CSV export.")
 
-    transactions = parse_transactions(
-        csv_path=temp_path,
-        date_column=None,
-        description_column=None,
-        debit_column=None,
-        credit_column=None,
-        amount_column=None,
-        balance_column=None,
-        reference_column=None,
-    )
-    upsert_transactions(
-        transactions=transactions,
-        persist_directory=session_directory,
-        collection_name=session_collection,
-        embedding_model=DEFAULT_EMBEDDING_MODEL,
-        batch_size=100,
-    )
+    session_directory, session_collection = create_session_storage()
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
+            temp_file.write(uploaded_file.getbuffer())
+            temp_path = Path(temp_file.name)
+
+        transactions = parse_transactions(
+            csv_path=temp_path,
+            date_column=None,
+            description_column=None,
+            debit_column=None,
+            credit_column=None,
+            amount_column=None,
+            balance_column=None,
+            reference_column=None,
+        )
+        if not transactions:
+            raise ValueError("No valid transaction rows were found. Check the CSV column headers and date format.")
+        upsert_transactions(
+            transactions=transactions,
+            persist_directory=session_directory,
+            collection_name=session_collection,
+            embedding_model=DEFAULT_EMBEDDING_MODEL,
+            batch_size=100,
+        )
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
     get_finance_agent.clear()
     get_health_dashboard_data.clear()
     return (
@@ -452,7 +448,7 @@ def render_health_dashboard(persist_directory: str, collection_name: str) -> Non
     dashboard_html = "".join(
         [
             metric_card_html(
-                "Financial Health Score",
+                "Estimated Financial Health Score",
                 score,
                 tone="primary",
                 subtitle=health_data.get("income_assumption", ""),
@@ -532,7 +528,7 @@ def run_prompt(agent: LangChainFinanceAgent, prompt: str) -> None:
     )
 
 
-def render_chat_panel(agent: LangChainFinanceAgent) -> None:
+def render_chat_panel(agent: LangChainFinanceAgent | None, data_loaded: bool) -> None:
     st.markdown("### Finance Copilot")
     st.markdown(
         """
@@ -552,6 +548,11 @@ def render_chat_panel(agent: LangChainFinanceAgent) -> None:
         ]
     if "queued_prompt" not in st.session_state:
         st.session_state.queued_prompt = None
+
+    if not data_loaded:
+        st.info("Load the sample dataset or a CSV statement to unlock transaction questions and citations.")
+        st.chat_input("Ask about your transactions", disabled=True)
+        return
 
     st.markdown(
         """
@@ -595,20 +596,21 @@ def render_chat_panel(agent: LangChainFinanceAgent) -> None:
     if not prompt:
         return
 
-    run_prompt(agent, prompt)
+    if agent is not None:
+        run_prompt(agent, prompt)
 
 
 def main() -> None:
     if "status_message" not in st.session_state:
         st.session_state.status_message = ""
     ensure_session_state_defaults()
-    ensure_default_data_loaded()
 
     st.markdown(
         """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
         :root {
+            color-scheme: light;
             --app-bg:
                 radial-gradient(circle at top left, rgba(255, 224, 178, 0.35), transparent 28%),
                 linear-gradient(180deg, #f7f1e6 0%, #f4f7fb 55%, #edf3fb 100%);
@@ -637,6 +639,7 @@ def main() -> None:
         }
         @media (prefers-color-scheme: dark) {
             :root {
+                color-scheme: dark;
                 --app-bg:
                     radial-gradient(circle at top left, rgba(20, 184, 166, 0.14), transparent 24%),
                     radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.16), transparent 30%),
@@ -957,26 +960,23 @@ def main() -> None:
             border-radius: 18px !important;
         }
         div[data-testid="stChatInput"],
-        div[data-testid="stChatInput"] > div,
-        div[data-testid="stChatInput"] form {
-            background: transparent !important;
-        }
-        div[data-testid="stChatInput"] > div,
-        div[data-testid="stChatInput"] form {
-            border: none !important;
-            box-shadow: none !important;
-        }
-        div[data-testid="stChatInput"] > div > div {
+        div[data-testid="stChatInput"] {
             background: var(--chat-wrapper-bg) !important;
             border: 1px solid var(--surface-border) !important;
             border-radius: 18px !important;
             padding: 0.55rem 0.65rem !important;
             box-shadow: 0 10px 28px rgba(2, 6, 23, 0.18) !important;
         }
+        div[data-testid="stChatInput"] form,
+        div[data-testid="stChatInput"] [data-baseweb="textarea"] {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
         div[data-testid="stChatInput"] div[data-baseweb="textarea"],
         div[data-testid="stChatInput"] div[data-baseweb="base-input"] {
             background: var(--input-bg) !important;
-            border: 1px solid transparent !important;
+            border: 1px solid var(--surface-border) !important;
             border-radius: 14px !important;
             box-shadow: none !important;
             overflow: hidden !important;
@@ -1028,7 +1028,6 @@ def main() -> None:
             </div>
             <div class="hero-actions">
                 <span class="status-pill">Private session storage</span>
-                <a class="live-link" href="{LIVE_APP_URL}" target="_blank" rel="noopener noreferrer">Open live app</a>
             </div>
         </div>
         """,
@@ -1037,7 +1036,10 @@ def main() -> None:
 
     left_col, right_col = st.columns([0.98, 1.02], gap="large")
     active_directory, active_collection = get_active_storage()
-    agent, _ = get_finance_agent(str(active_directory), active_collection)
+    data_loaded = st.session_state.data_loaded
+    agent: LangChainFinanceAgent | None = None
+    if data_loaded:
+        agent, _ = get_finance_agent(str(active_directory), active_collection)
 
     with left_col:
         st.markdown("### Workspace")
@@ -1052,11 +1054,13 @@ def main() -> None:
             if st.button("Try Sample Data", use_container_width=True):
                 with st.spinner("Loading sample transactions..."):
                     reset_session_storage()
-                    st.session_state.status_message = load_sample_dataset()
+                    st.session_state.status_message = load_sample_dataset(replace_existing=True)
+                    st.session_state.data_loaded = True
                 active_directory, active_collection = get_active_storage()
                 agent, _ = get_finance_agent(str(active_directory), active_collection)
+                data_loaded = True
         with reset_col:
-            if st.button("Reset Chat", use_container_width=True):
+            if st.button("Reset Chat", use_container_width=True, disabled=not data_loaded):
                 st.session_state.messages = [
                     {
                         "role": "assistant",
@@ -1074,17 +1078,34 @@ def main() -> None:
             "They do not write into the shared demo Chroma collection and are cleared when you switch back to sample data or the session ends."
         )
         if uploaded_file is not None and st.button("Process Statement", use_container_width=True):
-            with st.spinner("Parsing statement, generating embeddings, and creating a temporary session index..."):
-                st.session_state.status_message = ingest_uploaded_csv(uploaded_file)
-            active_directory, active_collection = get_active_storage()
-            agent, _ = get_finance_agent(str(active_directory), active_collection)
+            try:
+                with st.spinner("Parsing statement, generating embeddings, and creating a temporary session index..."):
+                    st.session_state.status_message = ingest_uploaded_csv(uploaded_file)
+                    st.session_state.data_loaded = True
+                active_directory, active_collection = get_active_storage()
+                agent, _ = get_finance_agent(str(active_directory), active_collection)
+                data_loaded = True
+            except ValueError as error:
+                reset_session_storage()
+                st.session_state.data_loaded = False
+                st.session_state.status_message = ""
+                st.error(str(error))
+            except Exception:
+                reset_session_storage()
+                st.session_state.data_loaded = False
+                st.session_state.status_message = ""
+                st.error("The statement could not be processed. Confirm it is a CSV bank export and try again.")
 
         if st.session_state.status_message:
             st.success(st.session_state.status_message)
-        render_health_dashboard(str(active_directory), active_collection)
+        if data_loaded:
+            render_health_dashboard(str(active_directory), active_collection)
+        else:
+            st.markdown("### Financial Health")
+            st.caption("Load a statement to calculate an estimated health score and spending breakdown.")
 
     with right_col:
-        render_chat_panel(agent)
+        render_chat_panel(agent, data_loaded)
 
 
 if __name__ == "__main__":
